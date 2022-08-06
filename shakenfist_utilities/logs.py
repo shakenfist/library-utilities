@@ -156,7 +156,7 @@ class ConsoleLoggingHandler(logging.Handler):
             # NOTE(mikal): level looks unused, but is used by the python
             # logging handler
             self.level = logging._nameToLevel[record.levelname.upper()]
-            print(self.format(record), err=True)
+            print(self.format(record))
         except Exception:
             self.handleError(record)
 
