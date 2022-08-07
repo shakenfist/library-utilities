@@ -1,5 +1,6 @@
 import copy
 import datetime
+from lib2to3.pytree import Base
 import logging
 from logging import handlers as logging_handlers
 import importlib
@@ -14,12 +15,12 @@ FLASK_ATTEMPTED = False
 
 
 # These classes are extensions of the work in https://github.com/vmig/pylogrus
-class SFPyLogrus(logging.Logger, PyLogrusBase):
+class SyslogLogger(logging.Logger, PyLogrusBase):
 
     def __init__(self, *args, **kwargs):
         extra = kwargs.pop('extra', None)
         self._extra_fields = extra or {}
-        super(SFPyLogrus, self).__init__(*args, **kwargs)
+        super(SyslogLogger, self).__init__(*args, **kwargs)
 
     def withPrefix(self, prefix=None):
         return self.with_prefix(prefix)
@@ -28,13 +29,13 @@ class SFPyLogrus(logging.Logger, PyLogrusBase):
         return self.with_fields(fields)
 
     def with_prefix(self, prefix=None):
-        return SFCustomAdapter(self, None, prefix)
+        return SyslogAdapter(self, None, prefix)
 
     def with_fields(self, fields=None):
-        return SFCustomAdapter(self, fields)
+        return SyslogAdapter(self, fields)
 
 
-class SFCustomAdapter(logging.LoggerAdapter, PyLogrusBase):
+class SyslogAdapter(logging.LoggerAdapter, PyLogrusBase):
 
     def __init__(self, logger, extra=None, prefix=None):
         """Logger modifier.
@@ -68,7 +69,7 @@ class SFCustomAdapter(logging.LoggerAdapter, PyLogrusBase):
         except RuntimeError:
             pass
 
-        super(SFCustomAdapter, self).__init__(
+        super(SyslogAdapter, self).__init__(
             self._logger, {'extra_fields': self._extra, 'prefix': self._prefix})
 
     @staticmethod
@@ -93,52 +94,57 @@ class SFCustomAdapter(logging.LoggerAdapter, PyLogrusBase):
                     fields[key] = value.uuid
 
         extra.update(fields)
-        return SFCustomAdapter(self._logger, extra, self._prefix)
+        return SyslogAdapter(self._logger, extra, self._prefix)
 
     def with_prefix(self, prefix=None):
-        return self if prefix is None else SFCustomAdapter(self._logger, self._extra, prefix)
+        return self if prefix is None else SyslogAdapter(self._logger, self._extra, prefix)
+
 
     def process(self, msg, kwargs):
         msg = '%s[%s] %s' % (setproctitle.getproctitle(), os.getpid(), msg)
-        kwargs["extra"] = self.extra
-
+        kwargs['extra'] = self.extra
         return msg, kwargs
 
 
-def setup(name):
-    logging.setLoggerClass(SFPyLogrus)
+class ConsoleLogger(logging.Logger, PyLogrusBase):
 
-    # Set root log level - higher handlers can set their own filter level
-    logging.root.setLevel(logging.DEBUG)
-    log = logging.getLogger(name)
+    def __init__(self, *args, **kwargs):
+        extra = kwargs.pop('extra', None)
+        self._extra_fields = extra or {}
+        super(ConsoleLogger, self).__init__(*args, **kwargs)
 
-    handler = None
-    if log.hasHandlers():
-        # The parent logger might have the handler, not this lower logger
-        if len(log.handlers) > 0:
-            # TODO(andy): Remove necessity to return handler or
-            # correctly obtain the handler without causing an exception
-            handler = log.handlers[0]
-    else:
-        # Add our handler
-        handler = logging_handlers.SysLogHandler(address='/dev/log')
-        handler.setFormatter(TextFormatter(
-            fmt='%(levelname)s %(message)s', colorize=False))
-        log.addHandler(handler)
+    def withPrefix(self, prefix=None):
+        return self.with_prefix(prefix)
 
-    return log.with_prefix(), handler
+    def withFields(self, fields=None):
+        return self.with_fields(fields)
+
+    def with_prefix(self, prefix=None):
+        return ConsoleAdapter(self, None, prefix)
+
+    def with_fields(self, fields=None):
+        return ConsoleAdapter(self, fields)
+
+
+class ConsoleAdapter(SyslogAdapter):
+    def process(self, msg, kwargs):
+        extra_string = ''
+        for key in self.extra.get('extra_fields', {}):
+            extra_string += '\n\t%s: %s' % (key,
+                                            self.extra['extra_fields'][key])
+        msg = '%s%s' % (msg, extra_string)
+        return msg, kwargs
 
 
 class ConsoleLogFormatter(logging.Formatter):
     def format(self, record):
-        # colour codes from https://gist.github.com/Prakasaka/219fe5695beeb4d6311583e79933a009
         level_to_color = {
-            logging.DEBUG: '\e[0;34m',    # blue
+            logging.DEBUG: '\033[34m',    # blue
             logging.INFO: '',
-            logging.WARNING: '\e[0;33m',  # yellow
-            logging.ERROR: '\e[0;31m'     # red
+            logging.WARNING: '\033[033m',  # yellow
+            logging.ERROR: '\033[031m'     # red
         }
-        reset_color = '\e[0m'
+        reset_color = '\033[0m'
 
         timestamp = str(datetime.datetime.now())
         if not record.exc_info:
@@ -161,8 +167,34 @@ class ConsoleLoggingHandler(logging.Handler):
             self.handleError(record)
 
 
+def setup(name):
+    """ Setup log formatter for a daemon. """
+    logging.setLoggerClass(SyslogLogger)
+
+    # Set root log level - higher handlers can set their own filter level
+    logging.root.setLevel(logging.DEBUG)
+    log = logging.getLogger(name)
+
+    handler = None
+    if log.hasHandlers():
+        # The parent logger might have the handler, not this lower logger
+        if len(log.handlers) > 0:
+            # TODO(andy): Remove necessity to return handler or
+            # correctly obtain the handler without causing an exception
+            handler = log.handlers[0]
+    else:
+        # Add our handler
+        handler = logging_handlers.SysLogHandler(address='/dev/log')
+        handler.setFormatter(TextFormatter(
+            fmt='%(levelname)s %(message)s', colorize=False))
+        log.addHandler(handler)
+
+    return log.with_prefix(), handler
+
+
 def setup_console(name):
-    logging.setLoggerClass(SFPyLogrus)
+    """ Setup log formatter for a console script. """
+    logging.setLoggerClass(ConsoleLogger)
 
     logging.root.setLevel(logging.INFO)
     log = logging.getLogger(name)
