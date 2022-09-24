@@ -90,7 +90,7 @@ class SyslogAdapter(logging.LoggerAdapter, PyLogrusBase):
         for key in ['artifact', 'blob', 'instance', 'network', 'networkinterface', 'node']:
             if key in fields:
                 value = fields[key]
-                if not isinstance(value, str):
+                if value and not isinstance(value, str):
                     fields[key] = value.uuid
 
         extra.update(fields)
