@@ -87,7 +87,8 @@ class SyslogAdapter(logging.LoggerAdapter, PyLogrusBase):
         fields = self._normalize(fields)
 
         # Handle "special fields" which might be internal objects
-        for key in ['artifact', 'blob', 'instance', 'network', 'networkinterface', 'node']:
+        for key in ['agentoperation', 'artifact', 'blob', 'instance', 'network',
+                    'networkinterface', 'node']:
             if key in fields:
                 value = fields[key]
                 if value and not isinstance(value, str):
