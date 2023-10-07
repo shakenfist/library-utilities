@@ -5,7 +5,7 @@ import logging
 from logging import handlers as logging_handlers
 import importlib
 import os
-from pylogrus import TextFormatter
+from pylogrus import TextFormatter, JsonFormatter
 from pylogrus.base import PyLogrusBase
 import setproctitle
 
@@ -167,7 +167,7 @@ class ConsoleLoggingHandler(logging.Handler):
             self.handleError(record)
 
 
-def setup(name):
+def setup(name, syslog=True, json=False, logpath=None):
     """ Setup log formatter for a daemon. """
     logging.setLoggerClass(SyslogLogger)
 
@@ -181,14 +181,32 @@ def setup(name):
         if len(log.handlers) > 0:
             # TODO(andy): Remove necessity to return handler or
             # correctly obtain the handler without causing an exception
-            handler = log.handlers[0]
-    else:
-        # Add our handler
+            return log.with_prefix(), log.handlers[0]
+
+    if syslog:
         handler = logging_handlers.SysLogHandler(address='/dev/log')
+    else:
+        handler = logging_handlers.WatchedFileHandler(logpath)
+
+    if json:
+        enabled_fields = [
+            ('name', 'logger_name'),
+            ('asctime', 'service_timestamp'),
+            ('levelname', 'level'),
+            ('threadName', 'thread_name'),
+            'message',
+            ('exception', 'exception_class'),
+            ('stacktrace', 'stack_trace'),
+            'module',
+            ('funcName', 'function')
+        ]
+        handler.setFormatter(JsonFormatter(
+            datefmt='Z', enabled_fields=enabled_fields))
+    else:
         handler.setFormatter(TextFormatter(
             fmt='%(levelname)s %(message)s', colorize=False))
-        log.addHandler(handler)
 
+    log.addHandler(handler)
     return log.with_prefix(), handler
 
 
