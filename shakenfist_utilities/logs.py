@@ -192,7 +192,7 @@ def setup(name, syslog=True, json=False, logpath=None):
     if json:
         enabled_fields = [
             ('name', 'logger_name'),
-            ('asctime', 'service_timestamp'),
+            ('asctime', 'ts'),
             ('levelname', 'level'),
             ('threadName', 'thread_name'),
             'message',
