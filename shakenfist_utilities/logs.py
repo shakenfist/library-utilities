@@ -186,6 +186,8 @@ def setup(name, syslog=True, json=False, logpath=None):
 
     if syslog:
         handler = logging_handlers.SysLogHandler(address='/dev/log')
+    elif logpath == 'stdout':
+        handler = ConsoleLoggingHandler()
     else:
         handler = logging_handlers.WatchedFileHandler(logpath)
 
