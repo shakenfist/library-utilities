@@ -91,6 +91,10 @@ def generic_wrapper(func):
             if 'key' in kwargs_log:
                 kwargs_log['key'] = '*****'
 
+            # Redact a password if any
+            if 'password' in kwargs_log:
+                kwargs_log['password'] = '*****'
+
             # Redact the JWT auth token in headers as well
             headers_log = dict(flask.request.headers)
             if 'Authorization' in headers_log:
