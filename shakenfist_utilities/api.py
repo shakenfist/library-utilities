@@ -141,6 +141,14 @@ def generic_wrapper(func):
             return error(401, 'invalid JWT in Authorization header',
                          suppress_traceback=True)
 
+        except ExpiredSignatureError:
+            # The JWT looked valid, except it has expired. If this is a web
+            # browser, redirect them back to the root URL. Otherwise just return
+            # a 401.
+            if flask.request.headers.get('Accept', 'text/html').find('text/html') != -1:
+                return flask.redirect('/', code=302)
+            return error(401, str(e), suppress_traceback=True)
+
         except (JWTDecodeError,
                 NoAuthorizationError,
                 InvalidHeaderError,
