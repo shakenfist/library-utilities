@@ -8,7 +8,7 @@ from flask_jwt_extended.exceptions import (
 )
 from flask_jwt_extended import decode_token, get_jwt_identity
 import json
-from jwt.exceptions import DecodeError, PyJWTError
+from jwt.exceptions import PyJWTError, DecodeError, ExpiredSignatureError
 from shakenfist_utilities import logs
 import sys
 import traceback
