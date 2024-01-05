@@ -6,7 +6,7 @@ from flask_jwt_extended.exceptions import (
     JWTDecodeError, NoAuthorizationError, InvalidHeaderError, WrongTokenError,
     RevokedTokenError, FreshTokenRequired, CSRFError
 )
-from flask_jwt_extended import decode_token, get_jwt_identity
+from flask_jwt_extended import decode_token, get_jwt_identity, unset_jwt_cookies
 import json
 from jwt.exceptions import PyJWTError, DecodeError, ExpiredSignatureError
 from shakenfist_utilities import logs
@@ -146,7 +146,9 @@ def generic_wrapper(func):
             # browser, redirect them back to the root URL. Otherwise just return
             # a 401.
             if flask.request.headers.get('Accept', 'text/html').find('text/html') != -1:
-                return flask.redirect('/', code=302)
+                resp = flask.redirect('/', code=302)
+                unset_jwt_cookies(resp)
+                return resp
             return error(401, str(e), suppress_traceback=True)
 
         except (JWTDecodeError,
