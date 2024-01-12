@@ -141,7 +141,7 @@ def generic_wrapper(func):
             return error(401, 'invalid JWT in Authorization header',
                          suppress_traceback=True)
 
-        except ExpiredSignatureError:
+        except ExpiredSignatureError as e:
             # The JWT looked valid, except it has expired. If this is a web
             # browser, redirect them back to the root URL. Otherwise just return
             # a 401.
