@@ -137,7 +137,13 @@ def generic_wrapper(func):
             return error(400, str(e), suppress_traceback=False)
 
         except DecodeError:
-            # Send a more informative message than 'Not enough segments'
+            # Send a more informative message than 'Not enough segments'. If this
+            # is a web browser, redirect them back to the root URL. Otherwise just
+            # return a 401.
+            if flask.request.headers.get('Accept', 'text/html').find('text/html') != -1:
+                resp = flask.redirect('/', code=302)
+                unset_jwt_cookies(resp)
+                return resp
             return error(401, 'invalid JWT in Authorization header',
                          suppress_traceback=True)
 
