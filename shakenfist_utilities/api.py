@@ -46,16 +46,6 @@ def error(status_code, message, suppress_traceback=False):
     return resp
 
 
-def caller_is_admin(func):
-    # Ensure only users in the 'system' namespace can call this method
-    def wrapper(*args, **kwargs):
-        if get_jwt_identity()[0] != 'system':
-            return error(401, 'unauthorized')
-
-        return func(*args, **kwargs)
-    return wrapper
-
-
 def flask_get_post_body():
     j = {}
     try:
