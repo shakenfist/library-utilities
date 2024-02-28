@@ -205,9 +205,15 @@ def setup(name, syslog=True, json=False, logpath=None):
         ]
         handler.setFormatter(JsonFormatter(
             datefmt='Z', enabled_fields=enabled_fields))
-    else:
+    elif syslog:
         handler.setFormatter(TextFormatter(
             fmt='%(levelname)s %(message)s', colorize=False))
+    elif logpath == 'stdout':
+        handler.setFormatter(TextFormatter(
+            fmt='%(levelname)s %(message)s', colorize=True))
+    else:
+        handler.setFormatter(TextFormatter(
+            fmt='%(asctime)s %(levelname)s %(message)s', colorize=False))
 
     log.addHandler(handler)
     return log.with_prefix(), handler
