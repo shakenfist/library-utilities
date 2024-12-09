@@ -1,6 +1,5 @@
 import copy
 import datetime
-from lib2to3.pytree import Base
 import logging
 from logging import handlers as logging_handlers
 import importlib
@@ -8,6 +7,7 @@ import os
 from pylogrus import TextFormatter, JsonFormatter
 from pylogrus.base import PyLogrusBase
 import setproctitle
+import threading
 
 
 FLASK = None
@@ -102,7 +102,8 @@ class SyslogAdapter(logging.LoggerAdapter, PyLogrusBase):
 
 
     def process(self, msg, kwargs):
-        msg = '%s[%s] %s' % (setproctitle.getproctitle(), os.getpid(), msg)
+        msg = '%s[%s:%s] %s' % (setproctitle.getproctitle(), os.getpid(),
+                                threading.get_ident(), msg)
         kwargs['extra'] = self.extra
         return msg, kwargs
 
@@ -196,6 +197,8 @@ def setup(name, syslog=True, json=False, logpath=None):
             ('name', 'logger_name'),
             ('asctime', 'ts'),
             ('levelname', 'level'),
+            'process',
+            'thread',
             ('threadName', 'thread_name'),
             'message',
             ('exception', 'exception_class'),
