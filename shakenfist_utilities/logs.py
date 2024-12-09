@@ -1,10 +1,11 @@
 import copy
 import datetime
-from lib2to3.pytree import Base
 import logging
-from logging import handlers as logging_handlers
+import threading
 import importlib
 import os
+
+from logging import handlers as logging_handlers
 from pylogrus import TextFormatter, JsonFormatter
 from pylogrus.base import PyLogrusBase
 import setproctitle
@@ -102,7 +103,8 @@ class SyslogAdapter(logging.LoggerAdapter, PyLogrusBase):
 
 
     def process(self, msg, kwargs):
-        msg = '%s[%s] %s' % (setproctitle.getproctitle(), os.getpid(), msg)
+        msg = '%s[%s:%s] %s' % (setproctitle.getproctitle(), os.getpid(),
+                                threading.get_ident(), msg)
         kwargs['extra'] = self.extra
         return msg, kwargs
 
