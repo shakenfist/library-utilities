@@ -1,3 +1,4 @@
 oslo.concurrency    # apache2
 pylogrus            # mit
 setproctitle        # bsd
+tid                 # mit
