@@ -8,7 +8,6 @@ import os
 from pylogrus import TextFormatter, JsonFormatter
 from pylogrus.base import PyLogrusBase
 import setproctitle
-import tid
 
 
 FLASK = None
@@ -103,8 +102,7 @@ class SyslogAdapter(logging.LoggerAdapter, PyLogrusBase):
 
 
     def process(self, msg, kwargs):
-        msg = '%s[%s:%s] %s' % (setproctitle.getproctitle(), os.getpid(),
-                                tid.gettid(), msg)
+        msg = '%s[%s] %s' % (setproctitle.getproctitle(), os.getpid(), msg)
         kwargs['extra'] = self.extra
         return msg, kwargs
 
