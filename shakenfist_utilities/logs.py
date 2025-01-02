@@ -4,6 +4,7 @@ import logging
 import threading
 import importlib
 import os
+import uuid
 
 from logging import handlers as logging_handlers
 from pylogrus import TextFormatter, JsonFormatter
@@ -87,13 +88,16 @@ class SyslogAdapter(logging.LoggerAdapter, PyLogrusBase):
         extra = copy.deepcopy(self._extra)
         fields = self._normalize(fields)
 
-        # Handle "special fields" which might be internal objects
-        for key in ['agentoperation', 'artifact', 'blob', 'instance', 'network',
-                    'networkinterface', 'node']:
-            if key in fields:
-                value = fields[key]
-                if value and not isinstance(value, str):
-                    fields[key] = value.uuid
+        for field in fields:
+            # The field might be an object and therefore have a .uuid attribute?
+            try:
+                fields[field] = fields[field].uuid
+            except AttributeError:
+                ...
+
+            # The field might be a uuid object not a string?
+            if isinstance(fields[field], uuid.UUID):
+                fields[field] = str(fields[field])
 
         extra.update(fields)
         return SyslogAdapter(self._logger, extra, self._prefix)
