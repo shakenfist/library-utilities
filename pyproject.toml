@@ -1,0 +1,48 @@
+[build-system]
+requires = [
+    "setuptools>=61.0",
+    "setuptools_scm[simple]>=6.2",
+    "wheel",
+    "build",
+    "twine"
+]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "shakenfist-utilities"
+dynamic = ["version"]
+
+description = "Utility libraries for Shaken Fist"
+readme = "README.md"
+requires-python = ">=3.7"
+dependencies = [
+    "oslo.concurrency",    # apache2
+    "pylogrus",            # mit
+    "setproctitle",        # bsd
+]
+
+[project.urls]
+"Homepage" = "https://shakenfist.com"
+"Bug Tracker" = "https://github.com/shakenfist/library-utilities/issues"
+
+[project.scripts]
+clingwrap = "clingwrap.main:cli"
+
+[tool.setuptools.package-data]
+clingwrap = [
+    "examples/*.cwd"
+]
+
+[tool.setuptools_scm]
+git_describe_command = "git describe --dirty --tags --match v* --first-parent"
+write_to = "clingwrap/_version.py"
+
+[project.optional-dependencies]
+test = [
+    "coverage",            # apache2
+    "testtools",           # mit
+    "mock",                # bsd
+    "stestr",              # apache2
+    "tox",                 # mit
+    "flake8",              # mit
+]
