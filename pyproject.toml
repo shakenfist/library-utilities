@@ -25,17 +25,9 @@ dependencies = [
 "Homepage" = "https://shakenfist.com"
 "Bug Tracker" = "https://github.com/shakenfist/library-utilities/issues"
 
-[project.scripts]
-clingwrap = "clingwrap.main:cli"
-
-[tool.setuptools.package-data]
-clingwrap = [
-    "examples/*.cwd"
-]
-
 [tool.setuptools_scm]
 git_describe_command = "git describe --dirty --tags --match v* --first-parent"
-write_to = "clingwrap/_version.py"
+write_to = "shakenfist_utilities/_version.py"
 
 [project.optional-dependencies]
 test = [
