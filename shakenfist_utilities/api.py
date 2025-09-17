@@ -14,7 +14,10 @@ import sys
 import traceback
 
 
-LOG, _ = logs.setup(__name__)
+import shakenfist_utilities
+
+
+LOG, _ = logs.setup(__name__, **shakenfist_utilities.LOGGING_CONFIG)
 TESTING = False
 
 
