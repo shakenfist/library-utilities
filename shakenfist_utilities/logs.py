@@ -183,12 +183,10 @@ def setup(name, syslog=True, json=False, logpath=None):
     log = logging.getLogger(name)
 
     handler = None
-    if log.hasHandlers():
-        # The parent logger might have the handler, not this lower logger
-        if len(log.handlers) > 0:
-            # TODO(andy): Remove necessity to return handler or
-            # correctly obtain the handler without causing an exception
-            return log.with_prefix(), log.handlers[0]
+    # Ensure our requested configuration is the one we have by removing
+    # pre-existing loggers.
+    while log.hasHandlers():
+        log.removeHandler(log.handlers[0])
 
     if syslog:
         handler = logging_handlers.SysLogHandler(address='/dev/log')
