@@ -15,7 +15,7 @@ import traceback
 from shakenfist_utilities import logs
 
 
-LOG, _ = logs.setup(__name__, {})
+LOG, _ = logs.setup(__name__)
 TESTING = False
 
 
