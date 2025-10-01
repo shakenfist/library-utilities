@@ -6,19 +6,22 @@ from flask_jwt_extended.exceptions import (
     JWTDecodeError, NoAuthorizationError, InvalidHeaderError, WrongTokenError,
     RevokedTokenError, FreshTokenRequired, CSRFError
 )
-from flask_jwt_extended import decode_token, get_jwt_identity, unset_jwt_cookies
+from flask_jwt_extended import decode_token, unset_jwt_cookies
 import json
 from jwt.exceptions import PyJWTError, DecodeError, ExpiredSignatureError
-from shakenfist_utilities import logs
 import sys
 import traceback
 
+from shakenfist_utilities import logs
 
-import shakenfist_utilities
 
-
-LOG, _ = logs.setup(__name__, **shakenfist_utilities.LOGGING_CONFIG)
+LOG, _ = logs.setup(__name__, {})
 TESTING = False
+
+
+def configure_logging(**config):
+    global LOG
+    LOG, _ = logs.setup(__name__, **config)
 
 
 def error(status_code, message, suppress_traceback=False):

@@ -186,14 +186,19 @@ def setup(name, syslog=True, json=False, logpath=None):
     # Ensure our requested configuration is the one we have by removing
     # pre-existing loggers.
     while log.hasHandlers():
+        print(f'PID {os.getpid()} clobbering previous log handler '
+              f'{str(log.handlers[0])}')
         log.removeHandler(log.handlers[0])
 
     if syslog:
         handler = logging_handlers.SysLogHandler(address='/dev/log')
+        print(f'PID {os.getpid()} using syslog handler')
     elif logpath == 'stdout':
         handler = ConsoleLoggingHandler()
+        print(f'PID {os.getpid()} using console handler')
     else:
         handler = logging_handlers.WatchedFileHandler(logpath)
+        print(f'PID {os.getpid()} using file handler')
 
     if json:
         enabled_fields = [
