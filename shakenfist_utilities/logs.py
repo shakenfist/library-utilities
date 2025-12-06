@@ -1,6 +1,7 @@
 import copy
 import datetime
 import logging
+import sys
 import threading
 import importlib
 import os
@@ -175,7 +176,12 @@ class ConsoleLoggingHandler(logging.Handler):
 
 
 def setup(name, syslog=True, json=False, logpath=None):
-    """ Setup log formatter for a daemon. """
+    """Setup log formatter for a daemon.
+
+    If the environment variable SHAKENFIST_LOG_TO_STDOUT is set to '1', logging
+    will be redirected to stdout instead of syslog. This is useful for unit
+    tests where stestr captures stdout and only displays it for failing tests.
+    """
     logging.setLoggerClass(SyslogLogger)
 
     # Set root log level - higher handlers can set their own filter level
@@ -190,7 +196,12 @@ def setup(name, syslog=True, json=False, logpath=None):
               f'{str(log.handlers[0])}')
         log.removeHandler(log.handlers[0])
 
-    if syslog:
+    # Allow tests to redirect logging to stdout for capture by test runners
+    if os.environ.get('SHAKENFIST_LOG_TO_STDOUT') == '1':
+        handler = logging.StreamHandler(sys.stdout)
+        handler.setFormatter(logging.Formatter(
+            '%(levelname)s %(name)s: %(message)s'))
+    elif syslog:
         handler = logging_handlers.SysLogHandler(address='/dev/log')
         print(f'PID {os.getpid()} using syslog handler')
     elif logpath == 'stdout':
