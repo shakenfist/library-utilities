@@ -2,13 +2,12 @@ import copy
 import datetime
 import logging
 import sys
-import threading
 import importlib
 import os
 import uuid
 
 from logging import handlers as logging_handlers
-from pylogrus import TextFormatter, JsonFormatter
+from pylogrus import JsonFormatter
 from pylogrus.base import PyLogrusBase
 import setproctitle
 
@@ -106,11 +105,17 @@ class SyslogAdapter(logging.LoggerAdapter, PyLogrusBase):
     def with_prefix(self, prefix=None):
         return self if prefix is None else SyslogAdapter(self._logger, self._extra, prefix)
 
-
     def process(self, msg, kwargs):
-        msg = '%s[%s:%s] %s' % (setproctitle.getproctitle(), os.getpid(),
-                                threading.get_ident(), msg)
-        kwargs['extra'] = self.extra
+        # The message field must contain only the caller's message. The process
+        # identity (process title) that used to be prepended to the message is
+        # now surfaced as a structured 'program' field instead, so the JSON
+        # 'message' field stays clean and indexable. pid and thread_name are
+        # emitted by the JsonFormatter directly from the LogRecord.
+        extra = copy.copy(self.extra)
+        extra_fields = dict(extra.get('extra_fields') or {})
+        extra_fields['program'] = setproctitle.getproctitle()
+        extra['extra_fields'] = extra_fields
+        kwargs['extra'] = extra
         return msg, kwargs
 
 
@@ -178,10 +183,20 @@ class ConsoleLoggingHandler(logging.Handler):
 def setup(name, syslog=True, json=False, logpath=None):
     """Setup log formatter for a daemon.
 
+    Daemon logging is always structured JSON now: the ``JsonFormatter`` is
+    installed on the syslog / file / stdout handler unconditionally. See
+    ``docs/log-record-fields.md`` for the emitted field-name contract.
+
+    The ``json`` parameter is deprecated and ignored -- it is retained only for
+    source compatibility with callers that still pass ``json=True``/
+    ``json=False``. JSON is now the only daemon format.
+
     If the environment variable SHAKENFIST_LOG_TO_STDOUT is set to '1', logging
     will be redirected to stdout instead of syslog. This is useful for unit
     tests where stestr captures stdout and only displays it for failing tests.
     """
+    del json  # Deprecated/no-op: JSON is now the only daemon format.
+
     logging.setLoggerClass(SyslogLogger)
 
     # Set root log level - higher handlers can set their own filter level
@@ -197,8 +212,6 @@ def setup(name, syslog=True, json=False, logpath=None):
     # Allow tests to redirect logging to stdout for capture by test runners
     if os.environ.get('SHAKENFIST_LOG_TO_STDOUT') == '1':
         handler = logging.StreamHandler(sys.stdout)
-        handler.setFormatter(logging.Formatter(
-            '%(levelname)s %(name)s: %(message)s'))
     elif syslog:
         handler = logging_handlers.SysLogHandler(address='/dev/log')
     elif logpath == 'stdout':
@@ -206,29 +219,20 @@ def setup(name, syslog=True, json=False, logpath=None):
     else:
         handler = logging_handlers.WatchedFileHandler(logpath)
 
-    if json:
-        enabled_fields = [
-            ('name', 'logger_name'),
-            ('asctime', 'ts'),
-            ('levelname', 'level'),
-            ('threadName', 'thread_name'),
-            'message',
-            ('exception', 'exception_class'),
-            ('stacktrace', 'stack_trace'),
-            'module',
-            ('funcName', 'function')
-        ]
-        handler.setFormatter(JsonFormatter(
-            datefmt='Z', enabled_fields=enabled_fields))
-    elif syslog:
-        handler.setFormatter(TextFormatter(
-            fmt='%(levelname)s %(message)s', colorize=False))
-    elif logpath == 'stdout':
-        handler.setFormatter(TextFormatter(
-            fmt='%(levelname)s %(message)s', colorize=True))
-    else:
-        handler.setFormatter(TextFormatter(
-            fmt='%(asctime)s %(levelname)s %(message)s', colorize=False))
+    enabled_fields = [
+        ('name', 'logger_name'),
+        ('asctime', 'ts'),
+        ('levelname', 'level'),
+        ('process', 'pid'),
+        ('threadName', 'thread_name'),
+        'message',
+        ('exception', 'exception_class'),
+        ('stacktrace', 'stack_trace'),
+        'module',
+        ('funcName', 'function')
+    ]
+    handler.setFormatter(JsonFormatter(
+        datefmt='Z', enabled_fields=enabled_fields))
 
     log.addHandler(handler)
     return log.with_prefix(), handler
