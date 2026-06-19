@@ -12,12 +12,26 @@
 
 FLAKE_COMMAND="flake8 --max-line-length=120"
 
-if test "x$1" = "x-HEAD" ; then
+if test "$1" = "-HEAD" ; then
     shift
-    files=$(git diff --name-only HEAD~1 | tr '\n' ' ')
-    echo "Running flake8 on ${files}"
-    diff -u --from-file /dev/null ${files} | $FLAKE_COMMAND --diff "$@"
+    # Check only the Python files changed since HEAD~1. flake8 removed the
+    # --diff option in 6.0, so run flake8 directly on the changed files. We
+    # use --diff-filter=d to exclude deleted files (which no longer exist on
+    # disk and would make flake8 error), and skip generated *_pb2.py protobuf
+    # stubs.
+    filtered_files=$(git diff --name-only --diff-filter=d HEAD~1 \
+        | grep '\.py$' | grep -v '_pb2' | tr '\n' ' ')
+    if test -z "${filtered_files}" ; then
+        echo "No changed Python files to check"
+        exit 0
+    fi
+    echo "Running flake8 on ${filtered_files}"
+    # Intentionally unquoted so the shell splits the list into separate
+    # arguments for flake8.
+    # shellcheck disable=SC2086
+    exec $FLAKE_COMMAND ${filtered_files} "$@"
 else
     echo "Running flake8 on all files"
+    # shellcheck disable=SC2086
     exec $FLAKE_COMMAND "$@"
 fi
