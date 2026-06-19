@@ -14,9 +14,16 @@ FLAKE_COMMAND="flake8 --max-line-length=120"
 
 if test "x$1" = "x-HEAD" ; then
     shift
-    files=$(git diff --name-only HEAD~1 | tr '\n' ' ')
+    # Only the Python files changed since HEAD~1. flake8 removed the --diff
+    # option in 6.0, so run flake8 directly on the changed files instead of
+    # piping a diff through it.
+    files=$(git diff --name-only HEAD~1 | grep '\.py$' | tr '\n' ' ')
+    if test -z "$(echo ${files} | tr -d ' ')" ; then
+        echo "No changed Python files to check"
+        exit 0
+    fi
     echo "Running flake8 on ${files}"
-    diff -u --from-file /dev/null ${files} | $FLAKE_COMMAND --diff "$@"
+    exec $FLAKE_COMMAND ${files} "$@"
 else
     echo "Running flake8 on all files"
     exec $FLAKE_COMMAND "$@"
