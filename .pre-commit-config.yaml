@@ -1,0 +1,22 @@
+# Pre-commit hooks for shakenfist-utilities
+#
+# Install with: pip install pre-commit && pre-commit install
+# Run manually: pre-commit run --all-files
+
+repos:
+  # GitHub Actions workflow linter
+  - repo: https://github.com/rhysd/actionlint
+    rev: v1.7.7
+    hooks:
+      - id: actionlint
+        name: Lint GitHub Actions workflows
+        description: Static checker for GitHub Actions workflow files
+
+  # Shell script linter for the helper scripts in tools/
+  - repo: https://github.com/shellcheck-py/shellcheck-py
+    rev: v0.10.0.1
+    hooks:
+      - id: shellcheck
+        files: ^tools/
+        types_or: [sh, bash, shell]
+        args: ['-x']
