@@ -205,8 +205,14 @@ def setup(name, syslog=True, json=False, logpath=None):
 
     handler = None
     # Ensure our requested configuration is the one we have by removing
-    # pre-existing loggers.
-    while log.hasHandlers():
+    # this logger's own pre-existing handlers. Note: check ``log.handlers``
+    # (this logger's own handlers) rather than ``log.hasHandlers()``, which
+    # returns True when any *ancestor* (e.g. the root logger) has a handler.
+    # If a root handler is installed before setup() runs for a child logger
+    # -- as happens once the Shaken Fist Loki shipper attaches its handler
+    # to the root logger -- ``hasHandlers()`` is True while ``log.handlers``
+    # is empty, so ``log.handlers[0]`` would raise IndexError.
+    while log.handlers:
         log.removeHandler(log.handlers[0])
 
     # Allow tests to redirect logging to stdout for capture by test runners
