@@ -99,6 +99,31 @@ class LogsTestCase(testtools.TestCase):
         obj = json.loads(buf.getvalue().strip())
         self.assertEqual('still json', obj['message'])
 
+    def test_setup_with_root_handler_present(self):
+        # Regression: when a handler is attached to the root logger before
+        # setup() runs for a child logger (as the Shaken Fist Loki shipper
+        # does), setup() must not raise. log.hasHandlers() is True via the
+        # root ancestor while the child logger's own handlers list is empty,
+        # so the old `while log.hasHandlers(): removeHandler(log.handlers[0])`
+        # raised IndexError.
+        root = logging.getLogger()
+        root_handler = logging.StreamHandler(io.StringIO())
+        root.addHandler(root_handler)
+        self.addCleanup(root.removeHandler, root_handler)
+
+        # Must not raise IndexError.
+        log, _ = logs.setup('test-root-handler-present')
+
+        # The root handler is left intact (setup only strips the child
+        # logger's own handlers).
+        self.assertIn(root_handler, root.handlers)
+
+        # And the logger still works.
+        buf = self._capture(log)
+        log.info('after root handler')
+        obj = json.loads(buf.getvalue().strip())
+        self.assertEqual('after root handler', obj['message'])
+
     def test_setup_console_is_not_json(self):
         log = logs.setup_console('test-console')
         buf = io.StringIO()
