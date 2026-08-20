@@ -1,3 +1,4 @@
+import contextlib
 import io
 import json
 import logging
@@ -123,6 +124,76 @@ class LogsTestCase(testtools.TestCase):
         log.info('after root handler')
         obj = json.loads(buf.getvalue().strip())
         self.assertEqual('after root handler', obj['message'])
+
+    def _console_output(self, log, emit):
+        """Run ``emit`` and return what the console handler printed.
+
+        Deliberately captures stdout rather than attaching a second
+        StreamHandler the way the tests above do. ConsoleLoggingHandler
+        prints directly, and a substitute handler has its own level -- so
+        adding one bypasses the very filtering these tests are about.
+        """
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            emit(log)
+        return buf.getvalue()
+
+    def test_console_keeps_logging_info_after_a_warning(self):
+        """A WARNING must not silence the INFOs that follow it.
+
+        emit() used to assign self.level from each record it emitted, and
+        Handler.level is what Logger.callHandlers filters on. So the first
+        WARNING raised the handler to WARNING and every later INFO was
+        dropped without a word; the first ERROR then dropped the WARNINGs
+        too, leaving a failing daemon quieter than a healthy one. Found in
+        conductor on 2026-08-20, where an unrelated startup warning
+        silenced the rest of the process's INFO logging.
+        """
+        log = logs.setup_console('test-console-ratchet')
+
+        def emit(log):
+            log.info('first info')
+            log.warning('a warning')
+            log.info('info after the warning')
+            log.error('an error')
+            log.warning('warning after the error')
+            log.info('info after the error')
+
+        out = self._console_output(log, emit)
+
+        for message in ('first info', 'a warning', 'info after the warning',
+                        'an error', 'warning after the error',
+                        'info after the error'):
+            self.assertIn(message, out)
+
+    def test_console_handler_level_is_not_mutated_by_emitting(self):
+        """The handler's level is fixed, whatever passes through it."""
+        log = logs.setup_console('test-console-handler-level')
+        handler = logging.getLogger(log.logger.name).handlers[0]
+        before = handler.level
+
+        self._console_output(log, lambda log: log.error('an error'))
+
+        self.assertEqual(before, handler.level)
+
+    def test_console_still_honours_the_logger_level(self):
+        """Removing the handler's filtering must not remove filtering.
+
+        The logger is where the level belongs, so raising it still works.
+        """
+        log = logs.setup_console('test-console-logger-level')
+        real_logger = logging.getLogger(log.logger.name)
+        real_logger.setLevel(logging.WARNING)
+        self.addCleanup(real_logger.setLevel, logging.NOTSET)
+
+        def emit(log):
+            log.info('filtered out')
+            log.warning('let through')
+
+        out = self._console_output(log, emit)
+
+        self.assertNotIn('filtered out', out)
+        self.assertIn('let through', out)
 
     def test_setup_console_is_not_json(self):
         log = logs.setup_console('test-console')
