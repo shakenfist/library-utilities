@@ -168,13 +168,20 @@ class ConsoleLogFormatter(logging.Formatter):
 
 
 class ConsoleLoggingHandler(logging.Handler):
-    level = logging.INFO
+    # Deliberately no level of its own, so it inherits NOTSET from
+    # logging.Handler and passes everything it is given. Filtering is the
+    # logger's job (setup_console sets logging.root to INFO), and doing it
+    # here as well is what caused the bug this note exists to prevent.
+    #
+    # emit() used to assign self.level from the record it was emitting.
+    # Handler.level is what Logger.callHandlers filters on, so that made
+    # the level a one-way ratchet: the first WARNING silently dropped every
+    # INFO after it, and the first ERROR then dropped the WARNINGs too. The
+    # more trouble a daemon was in, the less it logged -- and nothing
+    # anywhere reported that records were being discarded.
 
     def emit(self, record):
         try:
-            # NOTE(mikal): level looks unused, but is used by the python
-            # logging handler
-            self.level = logging._nameToLevel[record.levelname.upper()]
             print(self.format(record))
         except Exception:
             self.handleError(record)
