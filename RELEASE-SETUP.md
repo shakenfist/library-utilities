@@ -68,8 +68,27 @@ This prevents unauthorized users from creating release tags.
    - **Enforcement status**: `Active`
    - **Target tags**: Add pattern `v*`
    - **Rules**: Check **Restrict creations** and **Restrict deletions**
-   - **Bypass list**: Add repository admins or specific maintainers
+   - **Bypass list**: Add repository admins or specific maintainers,
+     **and GitHub Actions** (add the "GitHub Actions" app to the bypass
+     list). The release workflow's sign-tag job re-creates and
+     force-pushes the release tag as `github-actions[bot]` using
+     `GITHUB_TOKEN`; without the Actions bypass that push is rejected
+     by this ruleset and every release fails at the signing step.
 4. Click **Create**
+
+Be clear about what that bypass costs, because it is easy to read this
+section as the control it is no longer quite. Once GitHub Actions is on
+the bypass list, *any* workflow in this repository holding
+`contents: write` can create a `v*` tag -- and, since **Restrict
+deletions** is bypassed too and `sign-tag` pushes with `--force`, can
+rewrite one that already exists. The ruleset stops a person without
+push access; it does not stop a workflow.
+
+What actually gates tag creation from CI is step 2: the `release`
+environment's required reviewers, which `sign-tag` and the publishing
+jobs all wait on. Treat the two as a pair. A new workflow granted
+`contents: write` inherits the bypass silently, so it is worth asking
+what a workflow needs that permission for before granting it.
 
 ### 4. Verify Sigstore/Rekor Access
 

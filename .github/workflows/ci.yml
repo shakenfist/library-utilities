@@ -1,0 +1,140 @@
+# CI for shakenfist-utilities.
+#
+# Until this workflow the repository had no CI at all: release.yml was
+# the only thing here, and it runs after a tag, which is too late to
+# find anything. A library whose consumers are every other Shaken Fist
+# project is a poor place to discover a break by publishing it.
+#
+# The whole gate is one job, because there is one gate's worth of work:
+# the pre-commit hooks, flake8 over what changed, and the unit tests.
+# All three run on a static runner -- nothing here installs an OS
+# package or otherwise changes the machine, so nothing needs a
+# throwaway VM.
+#
+# That argument is about cost, not safety, and the two should not be
+# confused. Everything below executes code the pull request controls:
+# pre-commit runs the hooks its own config names, and tox runs its test
+# code. The static pool is persistent, so on a fork pull request that
+# would be a foothold on a shared machine rather than merely a wasted
+# runner. What makes it acceptable is a repository setting rather than
+# anything in this file -- Settings > Actions is set to require approval
+# for all external contributors, so a fork's workflows do not run at all
+# until a maintainer has looked. If that setting is ever relaxed, these
+# jobs belong on the throwaway vm pool, as secret-scan.yml already is.
+name: CI
+
+on:
+  pull_request:
+    branches: [develop]
+  # develop is the branch that gets tagged, so it is the one worth
+  # watching. A merge whose base moved after the pull request run, or an
+  # admin push, otherwise reaches a release untested. codeql-analysis.yml
+  # and secret-scan.yml already watch it; this makes the three agree.
+  push:
+    branches: [develop]
+  # pr-retest.yml re-runs this workflow by dispatching it, which is how
+  # a bot commit (which does not itself trigger a pull_request event)
+  # gets tested.
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  lint-and-test:
+    name: Lint and unit tests
+    runs-on: [self-hosted, static]
+    timeout-minutes: 15
+    concurrency:
+      group: ${{ github.workflow }}-${{ github.ref }}-lint-and-test
+      cancel-in-progress: true
+
+    steps:
+      # fetch-depth: 0 for two reasons. tools/flake8wrap.sh diffs
+      # against HEAD~1 to find the files this change touched, and
+      # setuptools_scm derives the version from the most recent v* tag
+      # when tox builds the package to test.
+      - name: Checkout the repository
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      # A venv because the runners enforce PEP 668 and refuse a bare
+      # install into the system environment.
+      #
+      # Under $RUNNER_TEMP rather than a fixed /tmp path. The static pool
+      # is shared and long lived, and the concurrency group is keyed on
+      # the ref, so two runs are expected to be in flight at once; with a
+      # constant path the second run's venv creation lands on top of the
+      # first's interpreter, and the cleanup step below deletes a venv
+      # another job is still running from. $RUNNER_TEMP is per runner,
+      # and a runner takes one job at a time.
+      - name: Install tox and pre-commit
+        run: |
+          python3 -m venv "${RUNNER_TEMP}/venv-ci"
+          "${RUNNER_TEMP}/venv-ci/bin/pip" install --quiet \
+              --disable-pip-version-check tox pre-commit
+
+      # On PATH rather than called by absolute path, so the steps below
+      # read as the commands a developer runs locally. A quoted absolute
+      # path also breaks the llm-context-lint-ci audit, which looks for a
+      # literal `pre-commit run` and does not see it through
+      # `".../bin/pre-commit" run`.
+      - name: Put the venv on PATH
+        run: echo "${RUNNER_TEMP}/venv-ci/bin" >> "${GITHUB_PATH}"
+
+      # The pre-commit hooks -- actionlint, shellcheck and skillsaw --
+      # were advisory until this ran them here: a clone that never ran
+      # `pre-commit install`, or a commit made with --no-verify, skipped
+      # every one of them. Running the config rather than naming the
+      # tools means a hook added later is picked up without editing this
+      # file.
+      - name: Run the pre-commit hooks
+        run: |
+          pre-commit run --all-files --show-diff-on-failure
+
+      # flake8wrap.sh checks only the Python files this change touched,
+      # which is deliberate: the tree has never been clean under a
+      # whole-repository run, and a lint job that is always red is a
+      # lint job nobody reads.
+      - name: Lint with flake8
+        run: |
+          tox -eflake8
+
+      # -epy3 rather than a bare `tox`: envlist is flake8, so the plain
+      # invocation runs the linter twice and no tests at all.
+      - name: Run the unit tests
+        run: |
+          tox -epy3
+
+      - name: Clean up
+        if: always()
+        run: |
+          rm -rf "${RUNNER_TEMP}/venv-ci"
+
+  # The automatic review, gated on the job above passing: a job skipped
+  # because a dependency failed never starts the reusable workflow, so
+  # the needs list *is* the CI-passed gate.
+  #
+  # The body lives once, in shakenfist/actions. Two consequences worth
+  # knowing before editing this. The permissions block has to be here
+  # rather than there, because a cross-repository reusable workflow
+  # cannot grant itself more token scope than its caller has -- and for
+  # the same reason this job cannot set runs-on or timeout-minutes,
+  # which the reusable workflow defines. And deliberately no
+  # `secrets: inherit`: nothing in the reviewer chain reads a secret,
+  # so inheriting would hand this repository's PyPI publishing rights
+  # to a workflow living in another repository for no benefit at all.
+  #
+  # No event guard is needed for the workflow_dispatch trigger above.
+  # The reusable workflow's own job is conditioned on the event being a
+  # pull request, so a dispatch run skips it rather than failing on a
+  # null pull request.
+  automated_reviewer:
+    name: "Automated reviewer"
+    needs: [lint-and-test]
+    permissions:
+      contents: read
+      pull-requests: write
+      issues: write
+    uses: shakenfist/actions/.github/workflows/pr-auto-review.yml@main
