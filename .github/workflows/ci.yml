@@ -10,10 +10,27 @@
 # All three run on a static runner -- nothing here installs an OS
 # package or otherwise changes the machine, so nothing needs a
 # throwaway VM.
+#
+# That argument is about cost, not safety, and the two should not be
+# confused. Everything below executes code the pull request controls:
+# pre-commit runs the hooks its own config names, and tox runs its test
+# code. The static pool is persistent, so on a fork pull request that
+# would be a foothold on a shared machine rather than merely a wasted
+# runner. What makes it acceptable is a repository setting rather than
+# anything in this file -- Settings > Actions is set to require approval
+# for all external contributors, so a fork's workflows do not run at all
+# until a maintainer has looked. If that setting is ever relaxed, these
+# jobs belong on the throwaway vm pool, as secret-scan.yml already is.
 name: CI
 
 on:
   pull_request:
+    branches: [develop]
+  # develop is the branch that gets tagged, so it is the one worth
+  # watching. A merge whose base moved after the pull request run, or an
+  # admin push, otherwise reaches a release untested. codeql-analysis.yml
+  # and secret-scan.yml already watch it; this makes the three agree.
+  push:
     branches: [develop]
   # pr-retest.yml re-runs this workflow by dispatching it, which is how
   # a bot commit (which does not itself trigger a pull_request event)
@@ -44,11 +61,19 @@ jobs:
 
       # A venv because the runners enforce PEP 668 and refuse a bare
       # install into the system environment.
+      #
+      # Under $RUNNER_TEMP rather than a fixed /tmp path. The static pool
+      # is shared and long lived, and the concurrency group is keyed on
+      # the ref, so two runs are expected to be in flight at once; with a
+      # constant path the second run's venv creation lands on top of the
+      # first's interpreter, and the cleanup step below deletes a venv
+      # another job is still running from. $RUNNER_TEMP is per runner,
+      # and a runner takes one job at a time.
       - name: Install tox and pre-commit
         run: |
-          python3 -m venv /tmp/venv-ci
-          /tmp/venv-ci/bin/pip install --quiet --disable-pip-version-check \
-              tox pre-commit
+          python3 -m venv "${RUNNER_TEMP}/venv-ci"
+          "${RUNNER_TEMP}/venv-ci/bin/pip" install --quiet \
+              --disable-pip-version-check tox pre-commit
 
       # The pre-commit hooks -- actionlint, shellcheck and skillsaw --
       # were advisory until this ran them here: a clone that never ran
@@ -58,7 +83,7 @@ jobs:
       # file.
       - name: Run the pre-commit hooks
         run: |
-          /tmp/venv-ci/bin/pre-commit run --all-files \
+          "${RUNNER_TEMP}/venv-ci/bin/pre-commit" run --all-files \
               --show-diff-on-failure
 
       # flake8wrap.sh checks only the Python files this change touched,
@@ -66,16 +91,19 @@ jobs:
       # whole-repository run, and a lint job that is always red is a
       # lint job nobody reads.
       - name: Lint with flake8
-        run: /tmp/venv-ci/bin/tox -eflake8
+        run: |
+          "${RUNNER_TEMP}/venv-ci/bin/tox" -eflake8
 
       # -epy3 rather than a bare `tox`: envlist is flake8, so the plain
       # invocation runs the linter twice and no tests at all.
       - name: Run the unit tests
-        run: /tmp/venv-ci/bin/tox -epy3
+        run: |
+          "${RUNNER_TEMP}/venv-ci/bin/tox" -epy3
 
       - name: Clean up
         if: always()
-        run: rm -rf /tmp/venv-ci
+        run: |
+          rm -rf "${RUNNER_TEMP}/venv-ci"
 
   # The automatic review, gated on the job above passing: a job skipped
   # because a dependency failed never starts the reusable workflow, so
