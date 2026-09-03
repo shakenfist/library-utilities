@@ -45,17 +45,17 @@ class JsonFormatter(logging.Formatter):
     installed anywhere in the fleet; this is the whole of what we used
     of it, and it is small enough to own.
 
-    The output is deliberately identical to what pylogrus produced,
-    field order included, because docs/log-record-fields.md is a stated
+    The field names and their order are deliberately identical to what
+    pylogrus produced, because docs/log-record-fields.md is a stated
     contract and the Loki queries built on it do not get a migration.
 
-    One thing does differ. pylogrus defaulted `enabled_fields` to six
-    basic fields; this defaults to ENABLED_FIELDS, so a bare
-    JsonFormatter() emits the documented contract rather than a subset
-    of it. Nothing constructed one without an explicit list -- setup()
-    passes ENABLED_FIELDS and shakenfist's Loki shipper passes its own
-    -- so the change is invisible today, and the new default is the
-    one a caller reaching for this class actually wants.
+    Two things differ, both on purpose. pylogrus defaulted
+    `enabled_fields` to six basic fields; this defaults to
+    ENABLED_FIELDS, so a bare JsonFormatter() emits the documented
+    contract rather than a subset of it -- nothing constructed one
+    without an explicit list, so the change is invisible today. And
+    formatTime resolves a 'Z' timestamp in UTC rather than local time;
+    see there for why that was worth changing rather than preserving.
 
     :param datefmt: passed to formatTime; 'Z' selects the ISO 8601 form
     :param enabled_fields: which record attributes to emit, and under
@@ -77,19 +77,25 @@ class JsonFormatter(logging.Formatter):
 
         A datefmt of 'Z' means ISO 8601 with milliseconds and a literal
         Z, which is what setup() asks for and what the field contract
-        documents as `ts`. Anything else is handed to strftime, and the
-        default is logging's own format.
+        documents as `ts`. It is resolved in UTC, because that is what
+        the Z says.
 
-        self.converter is logging.Formatter's, which is time.localtime.
-        That means the trailing Z is only honest on a host running UTC.
-        That was true of pylogrus too and is deliberately unchanged
-        here: this is a dependency swap, and moving every daemon's
-        timestamps is not something to do silently inside one.
+        pylogrus resolved it with logging.Formatter.converter, which is
+        time.localtime, so the Z was a claim rather than a fact: on an
+        Australian host every daemon stamped its logs ten hours in the
+        future and said they were Zulu. Nothing downstream could
+        correct for it either, because the offset is invisible once the
+        line is written.
+
+        Every other datefmt keeps the converter, and so keeps local
+        time. That is logging's own convention, and a caller asking for
+        '%H:%M:%S' has not asked for UTC.
         """
-        created = self.converter(record.created)
         if datefmt == 'Z':
             return '{}.{:03.0f}Z'.format(
-                time.strftime('%Y-%m-%dT%H:%M:%S', created), record.msecs)
+                time.strftime('%Y-%m-%dT%H:%M:%S', time.gmtime(record.created)),
+                record.msecs)
+        created = self.converter(record.created)
         if datefmt:
             return time.strftime(datefmt, created)
         return self.default_msec_format % (

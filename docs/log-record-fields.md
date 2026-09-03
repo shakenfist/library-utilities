@@ -23,7 +23,7 @@ Every daemon log line contains these base fields, mapped from the Python
 | JSON field         | Source `LogRecord` attribute | Notes |
 |--------------------|------------------------------|-------|
 | `logger_name`      | `name`                       | The logger name, i.e. the `name` passed to `setup()` (usually `__name__`). |
-| `ts`               | `asctime`                    | Timestamp in Zulu/UTC ISO-8601 form (e.g. `2026-06-19T17:58:00.234Z`). |
+| `ts`               | `asctime`                    | Timestamp in Zulu/UTC ISO-8601 form (e.g. `2026-06-19T17:58:00.234Z`). Genuinely UTC -- see the note below. |
 | `level`            | `levelname`                  | `DEBUG`, `INFO`, `WARNING`, `ERROR`, etc. |
 | `pid`              | `process`                    | Operating-system process id of the emitter. |
 | `thread_name`      | `threadName`                 | Name of the emitting thread (e.g. `MainThread`). |
@@ -39,6 +39,22 @@ attribute:
 | JSON field | Source | Notes |
 |------------|--------|-------|
 | `program`  | `setproctitle.getproctitle()` | The process title of the emitter. This used to be prepended to `message`; it is now a discrete field so `message` stays clean and indexable. |
+
+### `ts` is UTC, and did not used to be
+
+Until this was fixed, `ts` was resolved with `time.localtime` and then labelled
+`Z`. On a host in a non-UTC timezone that meant the timestamp was wrong by the
+host's offset -- on an Australian host, ten hours in the future -- while
+claiming to be Zulu. Nothing downstream could compensate, because the offset is
+invisible once the line is written.
+
+This matters when reading logs from before the fix. Lines shipped by an older
+release carry local time under a `Z`, so correlating them against anything else
+means knowing which host wrote them and what its offset was. Lines written after
+it are UTC and need no correction.
+
+Only the `Z` format is UTC. `setup()` is the only caller that asks for it, and
+any other `datefmt` keeps `logging`'s own convention of local time.
 
 ### Clean message
 

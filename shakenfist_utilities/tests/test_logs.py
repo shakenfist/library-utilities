@@ -3,6 +3,7 @@ import io
 import json
 import logging
 import sys
+import time
 import uuid
 
 import testtools
@@ -55,6 +56,30 @@ class JsonFormatterTestCase(testtools.TestCase):
         obj = self._format(self._record())
         self.assertRegex(
             obj['ts'], r'^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$')
+
+    def test_a_zulu_timestamp_is_actually_utc(self):
+        """The Z has to be a fact, not a claim.
+
+        pylogrus resolved it with time.localtime, so on an Australian
+        host every daemon stamped its logs ten hours in the future and
+        called them Zulu. Asserted against gmtime rather than against
+        "not localtime", so the test means the same thing on a host
+        that happens to run UTC.
+        """
+        record = self._record()
+        obj = self._format(record)
+        expected = time.strftime('%Y-%m-%dT%H:%M:%S',
+                                 time.gmtime(record.created))
+        self.assertTrue(obj['ts'].startswith(expected), obj['ts'])
+
+    def test_other_date_formats_stay_local(self):
+        """Only 'Z' means UTC; logging's own convention is local time."""
+        record = self._record()
+        obj = self._format(record, datefmt='%Y-%m-%dT%H:%M:%S',
+                           enabled_fields=[('asctime', 'ts')])
+        self.assertEqual(
+            time.strftime('%Y-%m-%dT%H:%M:%S', time.localtime(record.created)),
+            obj['ts'])
 
     def test_arguments_are_interpolated_into_the_message(self):
         self.assertEqual('hello world',
