@@ -14,7 +14,7 @@
   },
   "packageRules": [
     {
-      "description": "Automatically merge minor and patch-level updates",
+      "description": "Minor, patch and digest updates are grouped for review rather than merged unattended. automerge stays off until this repository's CI has enough history to be trusted as a merge gate; it only started running with the consistency bootstrap.",
       "matchUpdateTypes": [
         "minor",
         "patch",
