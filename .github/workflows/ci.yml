@@ -75,6 +75,14 @@ jobs:
           "${RUNNER_TEMP}/venv-ci/bin/pip" install --quiet \
               --disable-pip-version-check tox pre-commit
 
+      # On PATH rather than called by absolute path, so the steps below
+      # read as the commands a developer runs locally. A quoted absolute
+      # path also breaks the llm-context-lint-ci audit, which looks for a
+      # literal `pre-commit run` and does not see it through
+      # `".../bin/pre-commit" run`.
+      - name: Put the venv on PATH
+        run: echo "${RUNNER_TEMP}/venv-ci/bin" >> "${GITHUB_PATH}"
+
       # The pre-commit hooks -- actionlint, shellcheck and skillsaw --
       # were advisory until this ran them here: a clone that never ran
       # `pre-commit install`, or a commit made with --no-verify, skipped
@@ -83,8 +91,7 @@ jobs:
       # file.
       - name: Run the pre-commit hooks
         run: |
-          "${RUNNER_TEMP}/venv-ci/bin/pre-commit" run --all-files \
-              --show-diff-on-failure
+          pre-commit run --all-files --show-diff-on-failure
 
       # flake8wrap.sh checks only the Python files this change touched,
       # which is deliberate: the tree has never been clean under a
@@ -92,13 +99,13 @@ jobs:
       # lint job nobody reads.
       - name: Lint with flake8
         run: |
-          "${RUNNER_TEMP}/venv-ci/bin/tox" -eflake8
+          tox -eflake8
 
       # -epy3 rather than a bare `tox`: envlist is flake8, so the plain
       # invocation runs the linter twice and no tests at all.
       - name: Run the unit tests
         run: |
-          "${RUNNER_TEMP}/venv-ci/bin/tox" -epy3
+          tox -epy3
 
       - name: Clean up
         if: always()
