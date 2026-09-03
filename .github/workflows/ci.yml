@@ -1,0 +1,66 @@
+# CI for shakenfist-utilities.
+#
+# Until this workflow the repository had no CI at all: release.yml was
+# the only thing here, and it runs after a tag, which is too late to
+# find anything. A library whose consumers are every other Shaken Fist
+# project is a poor place to discover a break by publishing it.
+#
+# The whole gate is one job, because there is one gate's worth of work:
+# flake8 over what changed, and the unit tests. Both run on a static
+# runner -- nothing here installs an OS package or otherwise changes
+# the machine, so nothing needs a throwaway VM.
+name: CI
+
+on:
+  pull_request:
+    branches: [develop]
+  # pr-retest.yml re-runs this workflow by dispatching it, which is how
+  # a bot commit (which does not itself trigger a pull_request event)
+  # gets tested.
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  lint-and-test:
+    name: Lint and unit tests
+    runs-on: [self-hosted, static]
+    timeout-minutes: 15
+    concurrency:
+      group: ${{ github.workflow }}-${{ github.ref }}-lint-and-test
+      cancel-in-progress: true
+
+    steps:
+      # fetch-depth: 0 for two reasons. tools/flake8wrap.sh diffs
+      # against HEAD~1 to find the files this change touched, and
+      # setuptools_scm derives the version from the most recent v* tag
+      # when tox builds the package to test.
+      - name: Checkout the repository
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      # A venv because the runners enforce PEP 668 and refuse a bare
+      # install into the system environment.
+      - name: Install tox
+        run: |
+          python3 -m venv /tmp/venv-ci
+          /tmp/venv-ci/bin/pip install --quiet --disable-pip-version-check \
+              tox
+
+      # flake8wrap.sh checks only the Python files this change touched,
+      # which is deliberate: the tree has never been clean under a
+      # whole-repository run, and a lint job that is always red is a
+      # lint job nobody reads.
+      - name: Lint with flake8
+        run: /tmp/venv-ci/bin/tox -eflake8
+
+      # -epy3 rather than a bare `tox`: envlist is flake8, so the plain
+      # invocation runs the linter twice and no tests at all.
+      - name: Run the unit tests
+        run: /tmp/venv-ci/bin/tox -epy3
+
+      - name: Clean up
+        if: always()
+        run: rm -rf /tmp/venv-ci
