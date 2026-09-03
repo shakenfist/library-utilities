@@ -1,0 +1,28 @@
+# Export this repository's GitHub configuration to version control.
+#
+# Template source: shakenfist/development/templates/export-repo-config/
+#
+# Copied with no modifications; the shared workflow is entirely
+# project-agnostic. It runs daily and opens a pull request whenever the
+# repository's settings, rulesets or branch protection have changed, so
+# a change made in the web UI leaves a reviewable trace rather than
+# being known only to whoever made it.
+#
+# secrets: inherit is correct here and is not the pattern the
+# ci-review-automation audit forbids: this shared workflow genuinely
+# reads a secret to do its work, where the reviewer chain does not.
+name: Export repository configuration
+
+permissions:
+  contents: write
+  pull-requests: write
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '30 00 * * *'
+
+jobs:
+  export-config:
+    uses: shakenfist/actions/.github/workflows/export-repo-config.yml@main
+    secrets: inherit
