@@ -49,6 +49,14 @@ jobs:
         run: |
           release-venv/bin/twine check dist/*
 
+      # upload-artifact@v7 against download-artifact@v8 in the jobs
+      # below is not a mismatch, though it reads like one. The two
+      # actions are versioned independently and have simply drifted
+      # apart: upload-artifact's newest major is v7 and there is no v8
+      # to move to. The pairing that mattered was v3 to v4, where the
+      # storage backend changed; both of these are on the far side of
+      # that, and occystrap and kerbside have each cut releases through
+      # the publish path with exactly this pairing.
       - name: Upload distribution artifacts
         uses: actions/upload-artifact@v7
         with:
