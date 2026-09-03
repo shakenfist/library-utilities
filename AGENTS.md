@@ -62,7 +62,9 @@ them is generic request tracing written long before the route existed.
   handlers. Tests that call it need to put that back, or the next test
   in the same process inherits it.
 * Run `pre-commit run --all-files` before proposing a commit. It runs
-  `actionlint` over the workflows and `shellcheck` over `tools/`.
+  `actionlint` over the workflows, `shellcheck` over `tools/`, and
+  `skillsaw` over the agent context. CI runs the same config, so a hook
+  added there is a hook CI enforces.
 
 ## Versions come from tags, not from a file
 

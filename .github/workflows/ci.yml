@@ -6,9 +6,10 @@
 # project is a poor place to discover a break by publishing it.
 #
 # The whole gate is one job, because there is one gate's worth of work:
-# flake8 over what changed, and the unit tests. Both run on a static
-# runner -- nothing here installs an OS package or otherwise changes
-# the machine, so nothing needs a throwaway VM.
+# the pre-commit hooks, flake8 over what changed, and the unit tests.
+# All three run on a static runner -- nothing here installs an OS
+# package or otherwise changes the machine, so nothing needs a
+# throwaway VM.
 name: CI
 
 on:
@@ -43,11 +44,22 @@ jobs:
 
       # A venv because the runners enforce PEP 668 and refuse a bare
       # install into the system environment.
-      - name: Install tox
+      - name: Install tox and pre-commit
         run: |
           python3 -m venv /tmp/venv-ci
           /tmp/venv-ci/bin/pip install --quiet --disable-pip-version-check \
-              tox
+              tox pre-commit
+
+      # The pre-commit hooks -- actionlint, shellcheck and skillsaw --
+      # were advisory until this ran them here: a clone that never ran
+      # `pre-commit install`, or a commit made with --no-verify, skipped
+      # every one of them. Running the config rather than naming the
+      # tools means a hook added later is picked up without editing this
+      # file.
+      - name: Run the pre-commit hooks
+        run: |
+          /tmp/venv-ci/bin/pre-commit run --all-files \
+              --show-diff-on-failure
 
       # flake8wrap.sh checks only the Python files this change touched,
       # which is deliberate: the tree has never been clean under a
