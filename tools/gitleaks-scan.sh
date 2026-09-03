@@ -30,6 +30,13 @@
 # triaged by commit either. On a pull request HEAD reaches the branch
 # under test and all of the default branch, so nothing is given up.
 #
+# The version this was written and tested against is 8.16.0, which is
+# what Debian 13 packages and therefore what secret-scan.yml installs.
+# Newer 8.x releases supersede `detect` with `gitleaks git` and
+# `gitleaks dir`; 8.16 has neither, so `detect` is not merely the older
+# spelling here, it is the only one. When the packaged version moves,
+# the positive control below is what will notice.
+#
 # Usage:
 #   tools/gitleaks-scan.sh [--gitleaks PATH]
 #
@@ -59,9 +66,27 @@ while [ $# -gt 0 ]; do
     esac
 done
 
+# A path-like argument is resolved before the cd to the top of the tree
+# below, because otherwise `--gitleaks ./gitleaks` passes the check here
+# -- which runs in the caller's directory -- and then fails at the first
+# real invocation. A bare command name is left alone for $PATH to find.
+case "$GITLEAKS" in
+    */*) GITLEAKS=$(readlink -f "$GITLEAKS") ;;
+esac
+
 if ! command -v "$GITLEAKS" >/dev/null 2>&1 && [ ! -x "$GITLEAKS" ]; then
     echo "gitleaks not found. Install it, or pass --gitleaks PATH."
     echo "It is packaged from Debian 13 (trixie) onward: apt install gitleaks"
+    exit 1
+fi
+
+# The positive control plants a generated key, so this is a real
+# dependency and not just a convenience. secret-scan.yml installs
+# gitleaks and assumes the rest of the image, so say which part of the
+# rest we mean.
+if ! command -v ssh-keygen >/dev/null 2>&1; then
+    echo "ssh-keygen not found; the positive control cannot plant a key."
+    echo "Install openssh-client."
     exit 1
 fi
 
@@ -96,6 +121,21 @@ set +e
     --report-format json
 control_status=$?
 set -e
+
+# gitleaks may have exited before writing a report at all -- an
+# unrecognised flag, a permissions error, a subcommand that has been
+# retired under us. Reading the file regardless turns that into a
+# FileNotFoundError traceback, which fails closed but buries the one
+# message the reader actually needs under a Python stack.
+if [ ! -f "$CONTROL/report.json" ]; then
+    echo
+    echo "The positive control failed: gitleaks wrote no report (it"
+    echo "exited $control_status). It did not decline to find the planted"
+    echo "key -- it never got as far as looking."
+    echo
+    echo "Do not trust a clean scan until this passes."
+    exit 1
+fi
 
 found=$(python3 -c "
 import json
