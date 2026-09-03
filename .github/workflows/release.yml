@@ -30,7 +30,7 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           fetch-depth: 0  # Full history needed for setuptools_scm
 
@@ -55,9 +55,15 @@ jobs:
           name: dist
           path: dist/
 
+  # The three publishing jobs are guarded so that a workflow_dispatch
+  # run (which arrives with a refs/heads/* ref) only exercises the
+  # build and twine check. Without the guard, sign-tag would compute a
+  # tag name of the literal string "refs/heads/<branch>" and force-push
+  # a garbage refs/tags/refs/heads/<branch> ref.
   sign-tag:
     name: Sign release tag with Sigstore
     needs: build
+    if: startsWith(github.ref, 'refs/tags/v')
     runs-on: [self-hosted, debian-12, s]
     environment: release
 
@@ -67,7 +73,7 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
@@ -101,6 +107,7 @@ jobs:
   publish-pypi:
     name: Publish to PyPI
     needs: [build, sign-tag]
+    if: startsWith(github.ref, 'refs/tags/v')
     runs-on: [self-hosted, static]
     environment: release
 
@@ -110,13 +117,13 @@ jobs:
 
     steps:
       - name: Download distribution artifacts
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@v8
         with:
           name: dist
           path: dist/
 
       - name: Generate attestations for artifacts
-        uses: actions/attest-build-provenance@v3
+        uses: actions/attest-build-provenance@v4
         with:
           subject-path: 'dist/*'
 
@@ -126,6 +133,7 @@ jobs:
   github-release:
     name: Create GitHub Release
     needs: [build, sign-tag, publish-pypi]
+    if: startsWith(github.ref, 'refs/tags/v')
     runs-on: [self-hosted, static]
 
     permissions:
@@ -133,10 +141,10 @@ jobs:
 
     steps:
       - name: Download artifacts
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@v8
 
       - name: Create GitHub Release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           generate_release_notes: true
           files: dist/*
