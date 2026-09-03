@@ -48,8 +48,14 @@ class JsonFormatterTestCase(testtools.TestCase):
 
     def test_the_default_field_list_is_the_contract(self):
         """A bare JsonFormatter() emits what the documentation promises."""
-        self.assertEqual(self._format(self._record()),
-                         self._format(self._record(),
+        # One record formatted twice rather than two records formatted
+        # once each. A LogRecord timestamps itself at construction, so
+        # two of them either side of a millisecond boundary differ in
+        # `ts` and this fails for a reason that has nothing to do with
+        # the field list.
+        record = self._record()
+        self.assertEqual(self._format(record),
+                         self._format(record,
                                       enabled_fields=logs.ENABLED_FIELDS))
 
     def test_a_zulu_timestamp_has_milliseconds_and_a_z(self):
@@ -139,7 +145,6 @@ class JsonFormatterTestCase(testtools.TestCase):
             self._record(),
             enabled_fields=[('funcName', 'function'), ('name', 'logger_name')])
         self.assertEqual(['logger_name', 'function'], list(obj))
-
 
 
 class LogsTestCase(testtools.TestCase):
