@@ -6,9 +6,10 @@ import importlib
 import os
 import uuid
 
+import json
+import time
+
 from logging import handlers as logging_handlers
-from pylogrus import JsonFormatter
-from pylogrus.base import PyLogrusBase
 import setproctitle
 
 
@@ -16,8 +17,154 @@ FLASK = None
 FLASK_ATTEMPTED = False
 
 
-# These classes are extensions of the work in https://github.com/vmig/pylogrus
-class SyslogLogger(logging.Logger, PyLogrusBase):
+#: The LogRecord attributes daemon logging emits, and the JSON field
+#: names they are emitted under. A bare string is emitted under its own
+#: name; a tuple renames. This is the contract documented in
+#: docs/log-record-fields.md, and it is exported because consumers need
+#: it: shakenfist's Loki shipper carried a hand-maintained copy with a
+#: comment asking for exactly this.
+ENABLED_FIELDS = [
+    ('name', 'logger_name'),
+    ('asctime', 'ts'),
+    ('levelname', 'level'),
+    ('process', 'pid'),
+    ('threadName', 'thread_name'),
+    'message',
+    ('exception', 'exception_class'),
+    ('stacktrace', 'stack_trace'),
+    'module',
+    ('funcName', 'function'),
+]
+
+
+class JsonFormatter(logging.Formatter):
+    """Render a LogRecord as a single JSON object.
+
+    Formerly pylogrus.JsonFormatter, reimplemented here. pylogrus was
+    last released in June 2018 and was the only reason `six` was
+    installed anywhere in the fleet; this is the whole of what we used
+    of it, and it is small enough to own.
+
+    The output is deliberately identical to what pylogrus produced,
+    field order included, because docs/log-record-fields.md is a stated
+    contract and the Loki queries built on it do not get a migration.
+
+    One thing does differ. pylogrus defaulted `enabled_fields` to six
+    basic fields; this defaults to ENABLED_FIELDS, so a bare
+    JsonFormatter() emits the documented contract rather than a subset
+    of it. Nothing constructed one without an explicit list -- setup()
+    passes ENABLED_FIELDS and shakenfist's Loki shipper passes its own
+    -- so the change is invisible today, and the new default is the
+    one a caller reaching for this class actually wants.
+
+    :param datefmt: passed to formatTime; 'Z' selects the ISO 8601 form
+    :param enabled_fields: which record attributes to emit, and under
+                           what names; defaults to ENABLED_FIELDS
+    :param indent: json.dumps indent, for pretty printing
+    :param sort_keys: json.dumps sort_keys
+    """
+
+    def __init__(self, datefmt=None, enabled_fields=None, indent=None,
+                 sort_keys=False):
+        super(JsonFormatter, self).__init__(fmt=None, datefmt=datefmt)
+        self._indent = indent
+        self._sort_keys = sort_keys
+        self._enabled_fields = (
+            ENABLED_FIELDS if enabled_fields is None else enabled_fields)
+
+    def formatTime(self, record, datefmt=None):
+        """Format the record's creation time.
+
+        A datefmt of 'Z' means ISO 8601 with milliseconds and a literal
+        Z, which is what setup() asks for and what the field contract
+        documents as `ts`. Anything else is handed to strftime, and the
+        default is logging's own format.
+
+        self.converter is logging.Formatter's, which is time.localtime.
+        That means the trailing Z is only honest on a host running UTC.
+        That was true of pylogrus too and is deliberately unchanged
+        here: this is a dependency swap, and moving every daemon's
+        timestamps is not something to do silently inside one.
+        """
+        created = self.converter(record.created)
+        if datefmt == 'Z':
+            return '{}.{:03.0f}Z'.format(
+                time.strftime('%Y-%m-%dT%H:%M:%S', created), record.msecs)
+        if datefmt:
+            return time.strftime(datefmt, created)
+        return self.default_msec_format % (
+            time.strftime(self.default_time_format, created), record.msecs)
+
+    def _record_fields(self, record):
+        """Every attribute a caller may name, in emission order.
+
+        Built whole and then filtered, rather than built from the
+        enabled list, so that the order of the output is a property of
+        this table rather than of whatever order a caller happened to
+        pass. pylogrus behaved the same way and the field contract
+        quietly depends on it.
+        """
+        message = record.getMessage()
+        prefix = getattr(record, 'prefix', None)
+        if prefix:
+            message = '{} {}'.format(prefix, message)
+
+        return {
+            'name': record.name,
+            'asctime': self.formatTime(record, self.datefmt),
+            'created': record.created,
+            'msecs': record.msecs,
+            'relativeCreated': record.relativeCreated,
+            'levelno': record.levelno,
+            'levelname': record.levelname,
+            'thread': record.thread,
+            'threadName': record.threadName,
+            'process': record.process,
+            'pathname': record.pathname,
+            'filename': record.filename,
+            'module': record.module,
+            'lineno': record.lineno,
+            'funcName': record.funcName,
+            'message': message,
+            'exception': (
+                record.exc_info[0].__name__ if record.exc_info else None),
+            'stacktrace': record.exc_text,
+        }
+
+    def _enabled(self):
+        """The enabled field list as {attribute: emitted name}."""
+        enabled = self._enabled_fields
+        if not isinstance(enabled, list):
+            enabled = [str(enabled)]
+
+        names = {}
+        for item in enabled:
+            if isinstance(item, tuple):
+                names[item[0]] = item[1]
+            elif isinstance(item, str):
+                names[item] = item
+        return names
+
+    def format(self, record):
+        if record.exc_info and not record.exc_text:
+            record.exc_text = self.formatException(record.exc_info)
+
+        names = self._enabled()
+        obj = {names[key]: value
+               for key, value in self._record_fields(record).items()
+               if key in names}
+
+        extra_fields = getattr(record, 'extra_fields', None)
+        if isinstance(extra_fields, dict):
+            obj.update(extra_fields)
+
+        return json.dumps(obj, indent=self._indent,
+                          sort_keys=self._sort_keys)
+
+
+# These classes began as extensions of the work in
+# https://github.com/vmig/pylogrus
+class SyslogLogger(logging.Logger):
 
     def __init__(self, *args, **kwargs):
         extra = kwargs.pop('extra', None)
@@ -37,7 +184,7 @@ class SyslogLogger(logging.Logger, PyLogrusBase):
         return SyslogAdapter(self, fields)
 
 
-class SyslogAdapter(logging.LoggerAdapter, PyLogrusBase):
+class SyslogAdapter(logging.LoggerAdapter):
 
     def __init__(self, logger, extra=None, prefix=None):
         """Logger modifier.
@@ -119,7 +266,7 @@ class SyslogAdapter(logging.LoggerAdapter, PyLogrusBase):
         return msg, kwargs
 
 
-class ConsoleLogger(logging.Logger, PyLogrusBase):
+class ConsoleLogger(logging.Logger):
 
     def __init__(self, *args, **kwargs):
         extra = kwargs.pop('extra', None)
@@ -232,20 +379,8 @@ def setup(name, syslog=True, json=False, logpath=None):
     else:
         handler = logging_handlers.WatchedFileHandler(logpath)
 
-    enabled_fields = [
-        ('name', 'logger_name'),
-        ('asctime', 'ts'),
-        ('levelname', 'level'),
-        ('process', 'pid'),
-        ('threadName', 'thread_name'),
-        'message',
-        ('exception', 'exception_class'),
-        ('stacktrace', 'stack_trace'),
-        'module',
-        ('funcName', 'function')
-    ]
     handler.setFormatter(JsonFormatter(
-        datefmt='Z', enabled_fields=enabled_fields))
+        datefmt='Z', enabled_fields=ENABLED_FIELDS))
 
     log.addHandler(handler)
     return log.with_prefix(), handler

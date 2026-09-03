@@ -2,6 +2,7 @@ import contextlib
 import io
 import json
 import logging
+import sys
 import uuid
 
 import testtools
@@ -14,6 +15,106 @@ class _Thing(object):
 
     def __init__(self, value):
         self.uuid = value
+
+
+class JsonFormatterTestCase(testtools.TestCase):
+    """The formatter that replaced pylogrus.JsonFormatter.
+
+    docs/log-record-fields.md is a stated contract that the Loki
+    shipper and every saved query depend on, so these assert the shape
+    of the output rather than merely that it is JSON.
+    """
+
+    def _record(self, **kwargs):
+        record = logging.LogRecord(
+            'a.logger', kwargs.pop('level', logging.INFO), '/path/mod.py',
+            42, kwargs.pop('msg', 'hello %s'), kwargs.pop('args', ('world',)),
+            kwargs.pop('exc_info', None), func='do_thing')
+        for key, value in kwargs.items():
+            setattr(record, key, value)
+        return record
+
+    def _format(self, record, **kwargs):
+        kwargs.setdefault('datefmt', 'Z')
+        return json.loads(logs.JsonFormatter(**kwargs).format(record))
+
+    def test_the_contract_fields_are_emitted_in_order(self):
+        obj = self._format(self._record())
+        self.assertEqual(
+            ['logger_name', 'ts', 'level', 'thread_name', 'pid', 'module',
+             'function', 'message', 'exception_class', 'stack_trace'],
+            list(obj))
+
+    def test_the_default_field_list_is_the_contract(self):
+        """A bare JsonFormatter() emits what the documentation promises."""
+        self.assertEqual(self._format(self._record()),
+                         self._format(self._record(),
+                                      enabled_fields=logs.ENABLED_FIELDS))
+
+    def test_a_zulu_timestamp_has_milliseconds_and_a_z(self):
+        obj = self._format(self._record())
+        self.assertRegex(
+            obj['ts'], r'^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$')
+
+    def test_arguments_are_interpolated_into_the_message(self):
+        self.assertEqual('hello world',
+                         self._format(self._record())['message'])
+
+    def test_a_prefix_is_prepended_to_the_message(self):
+        obj = self._format(self._record(prefix='PFX'))
+        self.assertEqual('PFX hello world', obj['message'])
+
+    def test_an_empty_prefix_is_not_prepended(self):
+        self.assertEqual('hello world',
+                         self._format(self._record(prefix=''))['message'])
+
+    def test_no_prefix_attribute_is_not_an_error(self):
+        self.assertEqual('hello world',
+                         self._format(self._record())['message'])
+
+    def test_extra_fields_are_merged_into_the_body(self):
+        obj = self._format(self._record(extra_fields={'instance': 'abc'}))
+        self.assertEqual('abc', obj['instance'])
+
+    def test_extra_fields_that_are_not_a_dict_are_ignored(self):
+        obj = self._format(self._record(extra_fields='nope'))
+        self.assertNotIn('nope', obj)
+
+    def test_an_exception_populates_the_exception_fields(self):
+        try:
+            raise ValueError('boom')
+        except ValueError:
+            record = self._record(exc_info=sys.exc_info())
+        obj = self._format(record)
+        self.assertEqual('ValueError', obj['exception_class'])
+        self.assertIn('boom', obj['stack_trace'])
+
+    def test_no_exception_leaves_the_exception_fields_null(self):
+        obj = self._format(self._record())
+        self.assertIsNone(obj['exception_class'])
+        self.assertIsNone(obj['stack_trace'])
+
+    def test_an_explicit_field_list_selects_and_renames(self):
+        obj = self._format(self._record(),
+                           enabled_fields=['message', ('funcName', 'fn')])
+        self.assertEqual({'fn': 'do_thing', 'message': 'hello world'}, obj)
+
+    def test_an_unknown_field_name_is_ignored(self):
+        obj = self._format(self._record(),
+                           enabled_fields=['message', 'nosuchthing'])
+        self.assertEqual({'message': 'hello world'}, obj)
+
+    def test_a_bare_string_field_list_is_tolerated(self):
+        self.assertEqual({'message': 'hello world'},
+                         self._format(self._record(), enabled_fields='message'))
+
+    def test_output_order_follows_the_record_not_the_request(self):
+        """pylogrus behaved this way and the contract depends on it."""
+        obj = self._format(
+            self._record(),
+            enabled_fields=[('funcName', 'function'), ('name', 'logger_name')])
+        self.assertEqual(['logger_name', 'function'], list(obj))
+
 
 
 class LogsTestCase(testtools.TestCase):

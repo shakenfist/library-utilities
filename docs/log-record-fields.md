@@ -1,10 +1,15 @@
 # Log record field-name contract
 
 `shakenfist_utilities.logs.setup()` configures daemon logging to emit one
-structured JSON object per log line (via pylogrus's `JsonFormatter`). This is
-the only daemon log format -- there is no text format. This document is the
-stable contract for the field names that appear in that JSON, so downstream
-consumers (notably the Shaken Fist Loki log shipper) can rely on them.
+structured JSON object per log line, via this library's own
+`logs.JsonFormatter`. This is the only daemon log format -- there is no text
+format. This document is the stable contract for the field names that appear in
+that JSON, so downstream consumers (notably the Shaken Fist Loki log shipper)
+can rely on them.
+
+The field list is exported as `logs.ENABLED_FIELDS`, so a consumer that needs
+to build a matching formatter reads it from here rather than keeping its own
+copy in step by hand.
 
 `setup_console()` is a separate, human-readable path for CLI tools and is not
 covered by this contract.
@@ -12,7 +17,8 @@ covered by this contract.
 ## Base fields
 
 Every daemon log line contains these base fields, mapped from the Python
-`LogRecord` by `JsonFormatter`'s `enabled_fields`:
+`LogRecord` by `JsonFormatter`'s `enabled_fields`, which defaults to
+`logs.ENABLED_FIELDS`:
 
 | JSON field         | Source `LogRecord` attribute | Notes |
 |--------------------|------------------------------|-------|
