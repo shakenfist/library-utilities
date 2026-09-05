@@ -124,6 +124,27 @@ jobs:
       attestations: write
 
     steps:
+      # This job works in the checked-out workspace, while
+      # github-release below downloads into runner.temp. The asymmetry
+      # is not an oversight: gh-action-pypi-publish is a composite
+      # action that delegates to a Docker container action, and a
+      # container sees the workspace mounted at /github/workspace and
+      # nothing else of the runner's filesystem. runner.temp is not
+      # mounted -- on a self-hosted runner it is a sibling of the
+      # workspace, not a child -- so packages-dir has to be relative
+      # to the workspace, and an absolute path fails there however it
+      # is spelled. The action needs a real workspace regardless,
+      # since it writes its container trampoline into
+      # .github/.tmp/ before running it.
+      #
+      # Checking out is what makes that workspace safe to use. This
+      # pool is persistent and a job which skips checkout inherits
+      # whatever the last job left behind, but checkout cleans with
+      # "git clean -ffdx", which removes a stale gitignored dist/ --
+      # the same guarantee runner.temp buys the other job.
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
       - name: Download distribution artifacts
         uses: actions/download-artifact@v8
         with:
@@ -137,6 +158,8 @@ jobs:
 
       - name: Publish to PyPI
         uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages-dir: dist/
 
   github-release:
     name: Create GitHub Release
@@ -148,13 +171,28 @@ jobs:
       contents: write
 
     steps:
+      # Unlike publish-pypi above, this job does not check out, and
+      # does not need to: action-gh-release is a JavaScript action
+      # running on the host, so it reads an absolute path happily.
+      # Downloading into the per-job runner.temp is then the cheaper
+      # way to get a directory nothing else has written to, without
+      # paying for a checkout to clean one.
+      #
+      # fail_on_unmatched_files is the other half -- action-gh-release
+      # treats a glob that matches nothing as a warning, so without it
+      # a release that attached no files at all still reported
+      # success.
       - name: Download artifacts
         uses: actions/download-artifact@v8
+        with:
+          name: dist
+          path: ${{ runner.temp }}/dist/
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v3
         with:
           generate_release_notes: true
-          files: dist/*
+          files: ${{ runner.temp }}/dist/*
+          fail_on_unmatched_files: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
