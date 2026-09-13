@@ -77,4 +77,6 @@ GitHub configuration that tag relies on.
 ## Where the documentation lives
 
 * `docs/log-record-fields.md` -- the JSON field-name contract above.
+* `docs/github-security-settings.md` -- the security settings that live
+  on GitHub rather than in the checkout, and so leave no diff behind.
 * `docs/plans/index.md` -- the planning documents, such as they are.
