@@ -25,4 +25,3 @@ on:
 jobs:
   export-config:
     uses: shakenfist/actions/.github/workflows/export-repo-config.yml@main
-    secrets: inherit
