@@ -1,5 +1,6 @@
 import copy
 import datetime
+import enum
 import logging
 import sys
 import importlib
@@ -35,6 +36,52 @@ ENABLED_FIELDS = [
     'module',
     ('funcName', 'function'),
 ]
+
+
+def _json_default(obj):
+    """Render a log field value that json.dumps cannot encode natively.
+
+    Without this a single such value raised TypeError inside the
+    handler, logging printed '--- Logging error ---' and a traceback to
+    stderr, and the whole record was lost. Shaken Fist measured about
+    650 records a day going that way, from raw subprocess output, enum
+    members and pydantic models handed to with_fields(). These are log
+    fields rather than data, so a slightly lossy rendering always beats
+    a dropped record.
+
+    bytes decode as UTF-8, replacing what does not decode. Enum members
+    render as their name, which is what Shaken Fist's own serialisers
+    emit; enums that mix in str or int never reach here, because json
+    encodes those as their value. An object whose class has a
+    model_dump() returning a dict -- a pydantic v2 model, duck-typed so
+    this library does not depend on pydantic -- renders as its fields,
+    so they stay queryable once shipped. Everything else is str(), and
+    nothing here may return a value that would need rendering again.
+    """
+    if isinstance(obj, (bytes, bytearray)):
+        return obj.decode('utf-8', errors='replace')
+    if isinstance(obj, enum.Enum):
+        return obj.name
+    if isinstance(obj, uuid.UUID):
+        return str(obj)
+
+    # Look model_dump up on the type, not the instance, and insist on a
+    # dict back. A MagicMock answers any attribute, and its model_dump()
+    # returns another MagicMock, which json hands straight back to this
+    # function: about a thousand nested mocks per record, each logging a
+    # call into every ancestor's mock_calls. That took a Shaken Fist unit
+    # test worker to 42GB before either check existed.
+    if callable(getattr(type(obj), 'model_dump', None)):
+        try:
+            dumped = obj.model_dump(mode='json')
+        except Exception:
+            # A model_dump() that is not pydantic's, or a model that
+            # cannot serialise itself. Neither is worth the record.
+            dumped = None
+        if isinstance(dumped, dict):
+            return dumped
+
+    return str(obj)
 
 
 class JsonFormatter(logging.Formatter):
@@ -164,8 +211,23 @@ class JsonFormatter(logging.Formatter):
         if isinstance(extra_fields, dict):
             obj.update(extra_fields)
 
-        return json.dumps(obj, indent=self._indent,
-                          sort_keys=self._sort_keys)
+        try:
+            return self._dumps(obj)
+        except (TypeError, ValueError):
+            # _json_default is never consulted for dict keys, so a value
+            # holding a dict with a non-string key still fails, as does a
+            # circular reference. Stringify just the fields that fail, so
+            # the rest of the record survives intact.
+            for key, value in obj.items():
+                try:
+                    self._dumps(value)
+                except (TypeError, ValueError):
+                    obj[key] = str(value)
+            return self._dumps(obj)
+
+    def _dumps(self, value):
+        return json.dumps(value, indent=self._indent, sort_keys=self._sort_keys,
+                          default=_json_default)
 
 
 # These classes began as extensions of the work in

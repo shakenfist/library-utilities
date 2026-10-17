@@ -1,10 +1,12 @@
 import contextlib
+import enum
 import io
 import json
 import logging
 import sys
 import time
 import uuid
+from unittest import mock
 
 import testtools
 
@@ -16,6 +18,42 @@ class _Thing(object):
 
     def __init__(self, value):
         self.uuid = value
+
+
+class _Colour(enum.Enum):
+    RED = 1
+
+
+class _Model(object):
+    """A stand-in for a pydantic v2 model."""
+
+    def model_dump(self, mode=None):
+        return {'value': 'created', 'mode': mode}
+
+
+class _BrokenModel(object):
+    """A model_dump() that is not pydantic's."""
+
+    def model_dump(self):
+        return {'never': 'reached'}
+
+    def __str__(self):
+        return 'a broken model'
+
+
+class _NotADictModel(object):
+    """A model_dump() that returns something that is not a dict."""
+
+    def model_dump(self, mode=None):
+        return self
+
+    def __str__(self):
+        return 'not a dict model'
+
+
+class _Opaque(object):
+    def __str__(self):
+        return 'an opaque object'
 
 
 class JsonFormatterTestCase(testtools.TestCase):
@@ -110,6 +148,70 @@ class JsonFormatterTestCase(testtools.TestCase):
     def test_extra_fields_that_are_not_a_dict_are_ignored(self):
         obj = self._format(self._record(extra_fields='nope'))
         self.assertNotIn('nope', obj)
+
+    def _format_fields(self, **fields):
+        return self._format(self._record(extra_fields=fields))
+
+    def test_bytes_are_decoded(self):
+        self.assertEqual('output', self._format_fields(stdout=b'output')['stdout'])
+
+    def test_undecodable_bytes_are_replaced_not_fatal(self):
+        obj = self._format_fields(stderr=bytearray(b'\xff\xfeoops'))
+        self.assertEqual('\ufffd\ufffdoops', obj['stderr'])
+
+    def test_an_enum_member_renders_as_its_name(self):
+        self.assertEqual('RED', self._format_fields(colour=_Colour.RED)['colour'])
+
+    def test_a_uuid_renders_as_its_string(self):
+        value = uuid.UUID('aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee')
+        self.assertEqual(str(value), self._format_fields(network=value)['network'])
+
+    def test_a_model_renders_as_its_json_fields(self):
+        obj = self._format_fields(state=_Model())
+        self.assertEqual({'value': 'created', 'mode': 'json'}, obj['state'])
+
+    def test_a_model_dump_that_fails_falls_back_to_str(self):
+        obj = self._format_fields(state=_BrokenModel())
+        self.assertEqual('a broken model', obj['state'])
+
+    def test_a_model_dump_that_returns_a_non_dict_falls_back_to_str(self):
+        obj = self._format_fields(state=_NotADictModel())
+        self.assertEqual('not a dict model', obj['state'])
+
+    def test_a_magicmock_renders_as_str_without_recursing(self):
+        # A MagicMock's model_dump() returns another MagicMock, and so on;
+        # following that chain exhausted memory. It must render once, as
+        # str(), without model_dump() ever being called.
+        thing = mock.MagicMock()
+        obj = self._format_fields(thing=thing)
+        self.assertEqual(str(thing), obj['thing'])
+        self.assertNotIn('model_dump', str(thing.mock_calls))
+
+    def test_an_arbitrary_object_falls_back_to_str(self):
+        self.assertEqual('an opaque object', self._format_fields(thing=_Opaque())['thing'])
+
+    def test_unencodable_values_nested_in_containers_are_rendered(self):
+        obj = self._format_fields(nested={'out': [b'a', _Colour.RED]})
+        self.assertEqual({'out': ['a', 'RED']}, obj['nested'])
+
+    def test_a_non_string_dict_key_costs_only_that_field(self):
+        obj = self._format_fields(weird={_Opaque(): 'value'}, plain='kept')
+        self.assertIsInstance(obj['weird'], str)
+        self.assertEqual('kept', obj['plain'])
+        self.assertEqual('hello world', obj['message'])
+
+    def test_a_circular_reference_costs_only_that_field(self):
+        loop = []
+        loop.append(loop)
+        obj = self._format_fields(loop=loop, plain='kept')
+        self.assertEqual('[[...]]', obj['loop'])
+        self.assertEqual('kept', obj['plain'])
+
+    def test_mixed_nested_keys_survive_sort_keys(self):
+        record = self._record(extra_fields={'mixed': {1: 'a', 'b': 2}, 'plain': 'kept'})
+        obj = self._format(record, sort_keys=True)
+        self.assertIsInstance(obj['mixed'], str)
+        self.assertEqual('kept', obj['plain'])
 
     def test_an_exception_populates_the_exception_fields(self):
         try:
@@ -220,6 +322,17 @@ class LogsTestCase(testtools.TestCase):
         self.assertEqual('aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee',
                          obj['network'])
         self.assertIsInstance(obj['network'], str)
+
+    def test_with_fields_bytes_reach_the_log_line(self):
+        # The path Shaken Fist lost records on: a failed command's raw
+        # stdout handed to with_fields() and formatted by setup()'s handler.
+        log, _ = logs.setup('test-bytes')
+        buf = self._capture(log)
+        log.with_fields({'stdout': b'command output'}).info('Command failed')
+
+        obj = json.loads(buf.getvalue().strip())
+        self.assertEqual('Command failed', obj['message'])
+        self.assertEqual('command output', obj['stdout'])
 
     def test_deprecated_json_param_still_yields_json(self):
         # Passing the deprecated json=False must not raise and must still
