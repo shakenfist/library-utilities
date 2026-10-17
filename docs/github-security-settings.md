@@ -90,3 +90,26 @@ only caught by looking.
 
 In the web UI the same settings live under **Settings** > **Advanced
 Security**.
+
+## Repository variables
+
+One non-security setting shares the same problem, so it is recorded
+here too: the `RETEST_WORKFLOW` Actions variable must be `ci.yml`.
+
+`pr-retest.yml` is a byte-identical copy of
+`development/templates/ci-review-automation/pr-retest.yml`, and it
+dispatches `${{ vars.RETEST_WORKFLOW || 'functional-tests.yml' }}`.
+This repository has no functional tests and no `functional-tests.yml`;
+its tests live in `ci.yml`. With the variable unset, every retest
+request fails at the dispatch and says so on the pull request. The
+`export-repo-config.yml` export does not include variables either, so
+losing this one (for example when the repository is recreated or
+transferred) leaves no diff.
+
+```bash
+gh variable list -R shakenfist/library-utilities
+gh variable set RETEST_WORKFLOW -R shakenfist/library-utilities --body ci.yml
+```
+
+In the web UI it lives under **Settings** > **Secrets and variables** >
+**Actions** > **Variables**.

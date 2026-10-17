@@ -34,7 +34,9 @@ on:
     branches: [develop]
   # pr-retest.yml re-runs this workflow by dispatching it, which is how
   # a bot commit (which does not itself trigger a pull_request event)
-  # gets tested.
+  # gets tested. It finds this file through the RETEST_WORKFLOW
+  # repository variable, which must be ci.yml; see
+  # docs/github-security-settings.md.
   workflow_dispatch:
 
 permissions:
