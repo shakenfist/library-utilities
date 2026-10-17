@@ -52,10 +52,11 @@ def _json_default(obj):
     bytes decode as UTF-8, replacing what does not decode. Enum members
     render as their name, which is what Shaken Fist's own serialisers
     emit; enums that mix in str or int never reach here, because json
-    encodes those as their value. Anything with a model_dump() -- a
-    pydantic v2 model, duck-typed so this library does not depend on
-    pydantic -- renders as its fields, so they stay queryable once
-    shipped. Everything else is str().
+    encodes those as their value. An object whose class has a
+    model_dump() returning a dict -- a pydantic v2 model, duck-typed so
+    this library does not depend on pydantic -- renders as its fields,
+    so they stay queryable once shipped. Everything else is str(), and
+    nothing here may return a value that would need rendering again.
     """
     if isinstance(obj, (bytes, bytearray)):
         return obj.decode('utf-8', errors='replace')
@@ -64,14 +65,21 @@ def _json_default(obj):
     if isinstance(obj, uuid.UUID):
         return str(obj)
 
-    model_dump = getattr(obj, 'model_dump', None)
-    if callable(model_dump):
+    # Look model_dump up on the type, not the instance, and insist on a
+    # dict back. A MagicMock answers any attribute, and its model_dump()
+    # returns another MagicMock, which json hands straight back to this
+    # function: about a thousand nested mocks per record, each logging a
+    # call into every ancestor's mock_calls. That took a Shaken Fist unit
+    # test worker to 42GB before either check existed.
+    if callable(getattr(type(obj), 'model_dump', None)):
         try:
-            return model_dump(mode='json')
+            dumped = obj.model_dump(mode='json')
         except Exception:
             # A model_dump() that is not pydantic's, or a model that
             # cannot serialise itself. Neither is worth the record.
-            pass
+            dumped = None
+        if isinstance(dumped, dict):
+            return dumped
 
     return str(obj)
 

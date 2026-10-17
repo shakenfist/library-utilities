@@ -6,6 +6,7 @@ import logging
 import sys
 import time
 import uuid
+from unittest import mock
 
 import testtools
 
@@ -38,6 +39,16 @@ class _BrokenModel(object):
 
     def __str__(self):
         return 'a broken model'
+
+
+class _NotADictModel(object):
+    """A model_dump() that returns something that is not a dict."""
+
+    def model_dump(self, mode=None):
+        return self
+
+    def __str__(self):
+        return 'not a dict model'
 
 
 class _Opaque(object):
@@ -162,6 +173,19 @@ class JsonFormatterTestCase(testtools.TestCase):
     def test_a_model_dump_that_fails_falls_back_to_str(self):
         obj = self._format_fields(state=_BrokenModel())
         self.assertEqual('a broken model', obj['state'])
+
+    def test_a_model_dump_that_returns_a_non_dict_falls_back_to_str(self):
+        obj = self._format_fields(state=_NotADictModel())
+        self.assertEqual('not a dict model', obj['state'])
+
+    def test_a_magicmock_renders_as_str_without_recursing(self):
+        # A MagicMock's model_dump() returns another MagicMock, and so on;
+        # following that chain exhausted memory. It must render once, as
+        # str(), without model_dump() ever being called.
+        thing = mock.MagicMock()
+        obj = self._format_fields(thing=thing)
+        self.assertEqual(str(thing), obj['thing'])
+        self.assertNotIn('model_dump', str(thing.mock_calls))
 
     def test_an_arbitrary_object_falls_back_to_str(self):
         self.assertEqual('an opaque object', self._format_fields(thing=_Opaque())['thing'])
