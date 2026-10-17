@@ -81,6 +81,29 @@ The following normalisation rules apply:
 These body keys are free-form; the library does not enumerate or constrain them
 beyond the normalisation above.
 
+### Values JSON cannot encode
+
+A field value that `json` cannot encode natively no longer costs the record.
+Earlier releases raised inside the handler, `logging` printed
+`--- Logging error ---` and a traceback to stderr, and the line was lost.
+`JsonFormatter` now renders such values instead:
+
+| Value | Rendered as |
+|-------|-------------|
+| `bytes` / `bytearray` | Decoded as UTF-8, with undecodable bytes replaced by U+FFFD. |
+| An `enum.Enum` member | Its name, e.g. `RED`. Enums mixing in `str` or `int` encode as their value, as `json` always did. |
+| `uuid.UUID` (nested, where `with_fields()` did not reach it) | Its canonical string. |
+| Anything with a `model_dump()`, such as a pydantic v2 model | `model_dump(mode='json')`, so its fields stay structured and queryable. |
+| Anything else | `str(value)`. |
+
+This applies at any depth, so a list of bytes inside a dict renders too. Two
+things a renderer cannot fix -- a dict with a non-string key, and a circular
+reference -- cause only the affected top-level field to be emitted as
+`str(value)`; every other field in the record is unchanged.
+
+Callers should still log meaningful values: this is a guarantee that a record
+survives, not a recommended way to serialise an object.
+
 ## Labels are downstream, not here
 
 The Loki **stream labels** `{job, daemon, host}` are applied by the Shaken Fist
