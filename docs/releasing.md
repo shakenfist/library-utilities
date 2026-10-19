@@ -20,7 +20,8 @@ A new job in `ci.yml` goes in the `needs:` of both "Can enqueue" and
 "Can merge", or the queue will not wait for it.
 
 There is no `push` trigger on `ci.yml`: every commit on `develop` came
-through the queue, so a push run would only test it a third time.
+through the queue, so a push run would only test the exact commit
+its merge queue run already tested.
 `pr-retest.yml` can still dispatch the workflow by hand, but a
 dispatched run does not count towards a release.
 

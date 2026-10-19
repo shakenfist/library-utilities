@@ -30,9 +30,9 @@ on:
   # develop is the commit a merge_group run tested, even when its base
   # moved after the pull request run. develop is the branch that gets
   # tagged, and that run is the one release.yml's CI gate counts, which
-  # is why there is no push trigger: it would only test the same commit
-  # a second time. "Can enqueue" and "Can merge" below are the checks
-  # the queue's ruleset requires.
+  # is why there is no push trigger: it would only test the exact
+  # commit the merge_group run already tested. "Can enqueue" and "Can
+  # merge" below are the checks the queue's ruleset requires.
   merge_group:
   # pr-retest.yml re-runs this workflow by dispatching it, which is how
   # a bot commit (which does not itself trigger a pull_request event)
