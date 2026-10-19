@@ -102,6 +102,10 @@ The release gate counts a CI run only from the merge queue, or from a
 push to the default branch, which is `develop` here, so `develop`
 needs a queue. Add it only once the CI workflow's aggregator jobs are
 on `develop`, or the queue waits for checks that never report.
+Create it straight after that merge: the commit that adds the
+aggregator jobs, and anything merged before the ruleset is active,
+cannot be released. The first releasable commit is the first one
+merged through the queue.
 
 1. Go to **Settings** > **Rules** > **Rulesets** > **New ruleset** >
    **New branch ruleset**

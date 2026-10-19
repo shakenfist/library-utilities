@@ -82,8 +82,9 @@ jobs:
       # install into the system environment.
       #
       # Under $RUNNER_TEMP rather than a fixed /tmp path. The static pool
-      # is shared and long lived, and the concurrency group is keyed on
-      # the ref, so two runs are expected to be in flight at once; with a
+      # is shared and long lived, and the concurrency group serialises
+      # only runs of the same ref or queue, so runs for different pull
+      # requests are expected to be in flight at once; with a
       # constant path the second run's venv creation lands on top of the
       # first's interpreter, and the cleanup step below deletes a venv
       # another job is still running from. $RUNNER_TEMP is per runner,
