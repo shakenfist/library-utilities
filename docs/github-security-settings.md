@@ -113,3 +113,25 @@ gh variable set RETEST_WORKFLOW -R shakenfist/library-utilities --body ci.yml
 
 In the web UI it lives under **Settings** > **Secrets and variables** >
 **Actions** > **Variables**.
+
+## The merge queue ruleset
+
+The `Develop branch` ruleset puts `develop` behind a merge queue and
+requires the "Can enqueue" and "Can merge" checks from `ci.yml`. Two of
+its settings are load-bearing for files in this checkout, and neither
+leaves a diff when it changes:
+
+* The queue must stay serial (`max_entries_to_build: 1`): `ci.yml`'s
+  concurrency group cancels a superseded queue run on that assumption,
+  and with parallel builds each entry would cancel the one ahead of it.
+* A merge that bypasses the queue gets no CI run, so `release.yml`'s
+  gate refuses to release it.
+
+How to create the ruleset is in `RELEASE-SETUP.md`, under "Configure
+the Merge Queue", and why the queue matters to a release is in
+`docs/releasing.md`. To inspect it:
+
+```bash
+gh api repos/shakenfist/library-utilities/rules/branches/develop \
+    --jq '.[] | select(.type == "merge_queue") | .parameters'
+```

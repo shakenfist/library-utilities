@@ -66,6 +66,13 @@ them is generic request tracing written long before the route existed.
   `skillsaw` over the agent context. CI runs the same config, so a hook
   added there is a hook CI enforces.
 
+## Merging goes through the queue
+
+Changes merge to `develop` through the merge queue, never around it: a
+release tag is only accepted on a commit whose queue run passed. A new
+`ci.yml` job goes in the `needs:` of "Can enqueue" and "Can merge". See
+`docs/releasing.md`.
+
 ## Versions come from tags, not from a file
 
 `setuptools_scm` derives the version from the most recent `v*` tag and
@@ -77,6 +84,8 @@ GitHub configuration that tag relies on.
 ## Where the documentation lives
 
 * `docs/log-record-fields.md` -- the JSON field-name contract above.
+* `docs/releasing.md` -- merging through the queue, the release gate
+  and what the wheel contains.
 * `docs/github-security-settings.md` -- the security settings and the
   `RETEST_WORKFLOW` repository variable that live on GitHub rather than
   in the checkout, and so leave no diff behind.

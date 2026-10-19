@@ -26,12 +26,14 @@ name: CI
 on:
   pull_request:
     branches: [develop]
-  # develop is the branch that gets tagged, so it is the one worth
-  # watching. A merge whose base moved after the pull request run, or an
-  # admin push, otherwise reaches a release untested. codeql-analysis.yml
-  # and secret-scan.yml already watch it; this makes the three agree.
-  push:
-    branches: [develop]
+  # Merges go through a merge queue, so every commit that lands on
+  # develop is the commit a merge_group run tested, even when its base
+  # moved after the pull request run. develop is the branch that gets
+  # tagged, and that run is the one release.yml's CI gate counts, which
+  # is why there is no push trigger: it would only test the exact
+  # commit the merge_group run already tested. "Can enqueue" and "Can
+  # merge" below are the checks the queue's ruleset requires.
+  merge_group:
   # pr-retest.yml re-runs this workflow by dispatching it, which is how
   # a bot commit (which does not itself trigger a pull_request event)
   # gets tested. It finds this file through the RETEST_WORKFLOW
@@ -47,8 +49,23 @@ jobs:
     name: Lint and unit tests
     runs-on: [self-hosted, static]
     timeout-minutes: 15
+    # On a merge group, key on the base branch rather than github.ref,
+    # which is a new queue branch on every rebuild, so a superseded run
+    # is cancelled. That is safe because the queue is serial
+    # (max_entries_to_build: 1): any other first attempt of a
+    # merge_group run has already been abandoned. A re-run is not a
+    # queue build, though. It keeps its original event, so with the
+    # base-branch key a "Re-run jobs" on an old queue run would cancel
+    # the live queue entry or be cancelled by it. Re-runs therefore keep
+    # their own queue branch's group. The merge_group- prefix keeps a
+    # queue run out of a workflow_dispatch run's group on develop, whose
+    # github.ref is the same string.
     concurrency:
-      group: ${{ github.workflow }}-${{ github.ref }}-lint-and-test
+      group: >-
+        ${{ github.workflow }}-lint-and-test-${{
+        github.event_name == 'merge_group' && github.run_attempt == '1'
+        && format('merge_group-{0}', github.event.merge_group.base_ref)
+        || github.ref }}
       cancel-in-progress: true
 
     steps:
@@ -65,8 +82,9 @@ jobs:
       # install into the system environment.
       #
       # Under $RUNNER_TEMP rather than a fixed /tmp path. The static pool
-      # is shared and long lived, and the concurrency group is keyed on
-      # the ref, so two runs are expected to be in flight at once; with a
+      # is shared and long lived, and the concurrency group serialises
+      # only runs of the same ref or queue, so runs for different pull
+      # requests are expected to be in flight at once; with a
       # constant path the second run's venv creation lands on top of the
       # first's interpreter, and the cleanup step below deletes a venv
       # another job is still running from. $RUNNER_TEMP is per runner,
@@ -128,10 +146,10 @@ jobs:
   # so inheriting would hand this repository's PyPI publishing rights
   # to a workflow living in another repository for no benefit at all.
   #
-  # No event guard is needed for the workflow_dispatch trigger above.
-  # The reusable workflow's own job is conditioned on the event being a
-  # pull request, so a dispatch run skips it rather than failing on a
-  # null pull request.
+  # No event guard is needed for the workflow_dispatch and merge_group
+  # triggers above. The reusable workflow's own job is conditioned on
+  # the event being a pull request, so those runs skip it rather than
+  # failing on a null pull request.
   automated_reviewer:
     name: "Automated reviewer"
     needs: [lint-and-test]
@@ -140,3 +158,61 @@ jobs:
       pull-requests: write
       issues: write
     uses: shakenfist/actions/.github/workflows/pr-auto-review.yml@main
+
+  # The two checks the merge queue's ruleset requires, collecting this
+  # workflow's jobs into one result each, in the shape described at
+  # https://boinkor.net/2023/11/neat-github-actions-patterns-for-github-merge-queues/
+  # "Can enqueue" reports on pull requests and "Can merge" on merge
+  # queue entries; each is skipped, which GitHub treats as success, on
+  # the other event. Both require every need to succeed, because
+  # lint-and-test is never skipped on either event. The automated
+  # reviewer is advisory and deliberately not in needs: it must not be
+  # able to block a merge on an API hiccup.
+  can-enqueue:
+    name: "Can enqueue"
+    needs:
+      - lint-and-test
+    # always(), not !cancelled(): if the run is cancelled as a
+    # whole, this must still run and fail on the cancelled needs.
+    # A skipped check satisfies a required one, so a skip here
+    # would let an untested commit through.
+    if: ${{ always() && github.event_name != 'merge_group' }}
+    # The steps read only the needs context, so the token needs nothing.
+    permissions: {}
+    runs-on: [self-hosted, static]
+    timeout-minutes: 5
+    steps:
+      - name: Transform outcomes
+        env:
+          NEEDS_JSON: ${{ toJSON(needs) }}
+        run: |
+          echo "ALL_SUCCESS=$(echo "${NEEDS_JSON}" | jq 'to_entries | map(.value.result == "success") | all')" >> "${GITHUB_ENV}"
+      - name: Check outcomes
+        run: |
+          [ "${ALL_SUCCESS}" == true ]
+
+  can-merge:
+    name: "Can merge"
+    needs:
+      - lint-and-test
+    # always(), not !cancelled(): if the run is cancelled as a
+    # whole, this must still run and fail on the cancelled needs.
+    # A skipped check satisfies a required one, so a skip here
+    # would let an untested commit through.
+    if: ${{ always() && github.event_name == 'merge_group' }}
+    # The steps read only the needs context, so the token needs nothing.
+    permissions: {}
+    runs-on: [self-hosted, static]
+    timeout-minutes: 5
+    steps:
+      # Every need must succeed: this run is the one release.yml's CI
+      # gate counts, so a job that skipped here would let an untested
+      # tier reach a release.
+      - name: Transform outcomes
+        env:
+          NEEDS_JSON: ${{ toJSON(needs) }}
+        run: |
+          echo "ALL_SUCCESS=$(echo "${NEEDS_JSON}" | jq 'to_entries | map(.value.result == "success") | all')" >> "${GITHUB_ENV}"
+      - name: Check outcomes
+        run: |
+          [ "${ALL_SUCCESS}" == true ]

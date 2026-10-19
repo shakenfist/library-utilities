@@ -23,6 +23,18 @@ dependencies = [
 "Homepage" = "https://shakenfist.com"
 "Bug Tracker" = "https://github.com/shakenfist/library-utilities/issues"
 
+# The tests run from the checkout and must not ship. The exclude below
+# drops them as a package, but include-package-data defaults to true under
+# pyproject.toml and setuptools_scm's file finder offers every git-tracked
+# file as package data, so they would come straight back as data without
+# this. Nothing in this package reads a data file at runtime.
+[tool.setuptools]
+include-package-data = false
+
+[tool.setuptools.packages.find]
+include = ["shakenfist_utilities*"]
+exclude = ["shakenfist_utilities.tests*"]
+
 [tool.setuptools_scm]
 git_describe_command = "git describe --dirty --tags --match v* --first-parent"
 write_to = "shakenfist_utilities/_version.py"
