@@ -37,10 +37,12 @@ scanner misses it, so a green run means the scanner actually looked.
 
 This is the advisory-driven half of Dependabot, not its version
 updates, and it coexists with Renovate rather than competing with it.
-Renovate proposes routine bumps on the schedule in `renovate.json`,
-which sets `minimumReleaseAge` to three days — a deliberate soak that
-a security fix should not have to wait out. Dependabot security
-updates open a pull request as soon as an advisory lands.
+Renovate proposes routine bumps on the fleet's schedule. This
+repository's `renovate.json` only extends the `renovate-fleet` preset
+in shakenfist/development, and that preset is what sets
+`minimumReleaseAge` to three days — a deliberate soak that a security
+fix should not have to wait out. Dependabot security updates open a
+pull request as soon as an advisory lands.
 
 Do **not** enable Dependabot *version* updates (a
 `.github/dependabot.yml` with an `updates:` block). That is the part
